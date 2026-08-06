@@ -11,6 +11,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { href: "/admin/financeiro", label: "Financeiro" },
     { href: "/admin/administradores", label: "Administradores" },
     { href: "/admin/configuracoes", label: "Configurações" },
+    { href: "/admin/ajuda", label: "Manual" },
   ];
   return (
     <div className="min-h-dvh">
@@ -23,7 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 pb-2">
           {nav.map((n) => (
             <Link key={n.href} href={n.href}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--ink-soft)] hover:bg-[var(--bg)] hover:text-[var(--ink)]">
+              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--ink-soft)] hover:bg-[var(--bg)] hover:text-[var(--ink)]">
               {n.label}
             </Link>
           ))}

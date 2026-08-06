@@ -72,6 +72,21 @@ export default async function Dashboard() {
           {(games.data ?? []).length === 0 && <p className="text-sm text-[var(--ink-soft)]">Nenhum jogo futuro. Crie uma turma para gerar jogos automaticamente.</p>}
         </div>
       </section>
+
+      {(teams.count ?? 0) === 0 && (
+        <section className="card space-y-3 p-5">
+          <h2 className="font-bold">👋 Primeiros passos</h2>
+          <ol className="space-y-2 text-sm">
+            <li>1. Crie sua primeira turma com dia, horário, quadra e valores.</li>
+            <li>2. Adicione os mensalistas dessa turma.</li>
+            <li>3. Compartilhe o link público no grupo do WhatsApp.</li>
+          </ol>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/admin/turmas/nova" className="btn btn-primary btn-sm">Criar primeira turma</Link>
+            <Link href="/admin/ajuda" className="btn btn-outline btn-sm">Ler o manual</Link>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
