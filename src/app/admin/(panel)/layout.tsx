@@ -16,7 +16,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="min-h-dvh">
       <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--surface)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <span className="font-bold">🏐 Vôlei Manager</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Let's Play" className="h-8 w-auto" />
           <span className="text-sm text-[var(--ink-soft)]">{admin.name}</span>
         </div>
         <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 pb-2">

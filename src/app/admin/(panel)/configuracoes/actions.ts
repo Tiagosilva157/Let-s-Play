@@ -56,7 +56,7 @@ export async function testGpConnect(formData: FormData) {
   if (!phone) return { error: "Informe um telefone válido para o teste." };
   try {
     const { GpConnect } = await import("@/lib/gpconnect");
-    await GpConnect.sendTextMessage(phone, "✅ Teste de integração do Vôlei Manager — GP Connect funcionando!");
+    await GpConnect.sendTextMessage(phone, "✅ Teste de integração do Let's Play — GP Connect funcionando!");
     return { ok: true, message: "Mensagem de teste enviada! Confira o WhatsApp." };
   } catch (e) {
     return { error: `Falha no envio: ${String(e).slice(0, 120)}` };

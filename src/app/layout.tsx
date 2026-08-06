@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vôlei Manager",
+  title: "Let's Play",
   description: "Gestão de turmas, presenças e pagamentos do vôlei",
 };
 
