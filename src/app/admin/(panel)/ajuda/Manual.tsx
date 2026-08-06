@@ -30,7 +30,7 @@ export default function Manual({ sections }: { sections: ManualSection[] }) {
             Tudo o que o Let&apos;s Play faz, explicado passo a passo. Use a busca para ir direto ao ponto.
           </p>
         </div>
-        <a href="/admin/ajuda/manual.md" className="btn btn-outline btn-sm shrink-0">⬇ Baixar manual</a>
+        <a href="/admin/ajuda/manual.pdf" className="btn btn-outline btn-sm shrink-0">⬇ Baixar manual em PDF</a>
       </div>
 
       <input

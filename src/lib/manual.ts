@@ -309,7 +309,7 @@ export const MANUAL: ManualSection[] = [
         { label: "O Pix não confirmou a vaga", text: "Veja em Financeiro se a cobrança consta como paga. O sistema também confere sozinho de tempos em tempos e corrige diferenças." },
         { label: "Não consigo marcar alguém como mensalista", text: "Cadastre uma turma primeiro. Mensalista sempre pertence a uma turma." },
         { label: "A lista fechou antes da hora", text: "Revise o campo Confirmar até nas configurações da turma. Ele conta horas antes do jogo." },
-        { label: "Reabri a lista e ela fechou de novo", text: "Isso foi corrigido: reabrir agora estende o prazo automaticamente até o horário do jogo." },
+        { label: "Reabri a lista e ela fechou sozinha", text: "Ao reabrir uma lista com o prazo vencido, o sistema estende o prazo até o horário do jogo automaticamente, então ela permanece aberta." },
         { label: "Um jogo não foi criado", text: "Confirme se a turma está Ativa e se o dia da semana está correto. Os jogos são gerados para as próximas semanas, uma vez por dia." },
       ]},
     ],
