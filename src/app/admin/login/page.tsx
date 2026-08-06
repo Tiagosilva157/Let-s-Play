@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
+import Spinner from "@/components/Spinner";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -37,7 +38,7 @@ export default function AdminLogin() {
         {error && <p className="rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p>}
         <input className="input" type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input className="input" type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <button className="btn btn-primary" disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
+        <button className="btn btn-primary" disabled={loading}>{loading ? <><Spinner /> Entrando...</> : "Entrar"}</button>
       </form>
     </main>
   );

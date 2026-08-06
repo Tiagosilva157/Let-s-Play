@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPlayer, updatePlayer, togglePlayerActive } from "./actions";
+import Spinner from "@/components/Spinner";
 
 export interface PlayerRow {
   id: string; name: string; phone: string; phoneRaw: string; notes: string;
@@ -62,7 +63,7 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
 
           <PlayerTypePicker teams={teams} initialTeamIds={editing?.teamIds ?? []} />
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? "Salvando..." : "Salvar"}</button>
+            <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : "Salvar"}</button>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => { setShowForm(false); setEditing(null); }}>Cancelar</button>
           </div>
           {editing && (

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview } from "../actions";
+import Spinner from "@/components/Spinner";
 
 interface Participant {
   id: string; playerId: string; name: string; phone: string;
@@ -56,17 +57,17 @@ export default function GameManager({ game, participants }: { game: Game; partic
 
       <div className="flex flex-wrap gap-2">
         {game.status === "scheduled" && (
-          <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, true))}>Abrir lista agora</button>
+          <button className="btn btn-primary btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, true))}>{pending && <Spinner size={14} />} Abrir lista agora</button>
         )}
         {game.status === "open" && (
-          <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, false))}>Fechar lista</button>
+          <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, false))}>{pending && <Spinner size={14} />} Fechar lista</button>
         )}
         {game.status === "closed" && (
-          <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, true))}>Reabrir lista</button>
+          <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, true))}>{pending && <Spinner size={14} />} Reabrir lista</button>
         )}
         {game.hasWhatsApp && (
           <button className="btn btn-outline btn-sm" disabled={pending}
-            onClick={() => run(() => sendListNow(game.id), "Lista enviada ao grupo!")}>📤 Enviar lista ao grupo</button>
+            onClick={() => run(() => sendListNow(game.id), "Lista enviada ao grupo!")}>{pending ? <Spinner size={14} /> : "📤"} Enviar lista ao grupo</button>
         )}
         {game.status !== "canceled" && (
           <button className="btn btn-danger-soft btn-sm" disabled={pending}

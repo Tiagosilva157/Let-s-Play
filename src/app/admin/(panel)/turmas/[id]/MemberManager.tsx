@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addMember, removeMember, activateSubscription, cancelSubscription } from "../actions";
+import Spinner from "@/components/Spinner";
 
 interface Member { id: string; name: string; phone: string; fee: number; dueDay: number; subscription: string }
 
@@ -54,7 +55,7 @@ export default function MemberManager({ teamId, members }: { teamId: string; mem
             <input name="monthly_fee_override" className="input" type="number" step="0.01" placeholder="Valor (padrão da turma)" />
             <input name="due_day" className="input" type="number" min={1} max={28} defaultValue={10} placeholder="Dia do vencimento" />
           </div>
-          <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? "Salvando..." : "Adicionar mensalista"}</button>
+          <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : "Adicionar mensalista"}</button>
         </form>
       )}
 

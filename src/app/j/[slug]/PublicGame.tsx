@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Spinner from "@/components/Spinner";
 
 interface Game {
   game_id: string; team_name: string; date: string; time: string; address: string;
@@ -33,8 +34,13 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   const [name, setName] = useState("");
   const [pix, setPix] = useState<Pix | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, startRefresh] = useTransition();
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const busy = loading || refreshing;
+
+  // mantém o indicador girando até a tela realmente atualizar
+  const refresh = () => startRefresh(() => router.refresh());
 
   const confirmed = participants.filter((p) => p.status === "confirmed");
   const waitlist = participants.filter((p) => p.status === "waitlist");
@@ -86,16 +92,16 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     const data = await api("/api/auth/otp/verify", { phone, code, name: withName });
     if (!data) return;
     if (data.needs_name) { setStep("name"); return; }
-    router.refresh();
+    refresh();
     setStep("idle");
   }
 
   async function doAction(action: string) {
     const data = await api("/api/public/action", { gameId: game.game_id, action });
     if (!data) return;
-    if (data.waitlisted) { router.refresh(); return; }
+    if (data.waitlisted) { refresh(); return; }
     if (data.pix) { setPix(data.pix); return; }
-    router.refresh();
+    refresh();
   }
 
   function copyPix() {
@@ -160,8 +166,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               <label className="text-sm font-medium">Seu WhatsApp</label>
               <input className="input" type="tel" inputMode="tel" placeholder="(11) 99999-9999"
                 value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus />
-              <button className="btn btn-primary" onClick={requestOtp} disabled={loading || phone.replace(/\D/g, "").length < 10}>
-                {loading ? "Enviando..." : "Receber código no WhatsApp"}
+              <button className="btn btn-primary" onClick={requestOtp} disabled={busy || phone.replace(/\D/g, "").length < 10}>
+                {busy ? <><Spinner /> Enviando...</> : "Receber código no WhatsApp"}
               </button>
             </>
           )}
@@ -171,10 +177,10 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               <label className="text-sm font-medium">Código recebido no WhatsApp</label>
               <input className="input text-center text-2xl tracking-[0.5em]" type="text" inputMode="numeric" maxLength={6}
                 value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} autoFocus />
-              <button className="btn btn-primary" onClick={() => verifyOtp()} disabled={loading || code.length !== 6}>
-                {loading ? "Verificando..." : "Entrar"}
+              <button className="btn btn-primary" onClick={() => verifyOtp()} disabled={busy || code.length !== 6}>
+                {busy ? <><Spinner /> Verificando...</> : "Entrar"}
               </button>
-              <button className="btn btn-outline" onClick={requestOtp} disabled={loading}>Reenviar código</button>
+              <button className="btn btn-outline" onClick={requestOtp} disabled={busy}>Reenviar código</button>
             </>
           )}
 
@@ -183,8 +189,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               <label className="text-sm font-medium">Como podemos te chamar?</label>
               <input className="input" placeholder="Nome e sobrenome" value={name}
                 onChange={(e) => setName(e.target.value)} autoFocus />
-              <button className="btn btn-primary" onClick={() => verifyOtp(name)} disabled={loading || name.trim().length < 2}>
-                Continuar
+              <button className="btn btn-primary" onClick={() => verifyOtp(name)} disabled={busy || name.trim().length < 2}>
+                {busy && <Spinner />} Continuar
               </button>
             </>
           )}
@@ -198,8 +204,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                   <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm font-semibold text-[var(--success)]">
                     ✓ Você está confirmado{myStatus.kind === "dropin" ? " (pago)" : ""}!
                   </p>
-                  <button className="btn btn-danger-soft" onClick={() => doAction(isMember ? "decline" : "withdraw")} disabled={loading}>
-                    Desistir da vaga
+                  <button className="btn btn-danger-soft" onClick={() => doAction(isMember ? "decline" : "withdraw")} disabled={busy}>
+                    {busy && <Spinner />} Desistir da vaga
                   </button>
                   <p className="text-xs text-center text-[var(--ink-soft)]">
                     Desistência sem cobrança até {new Date(game.withdraw_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -210,11 +216,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               {myStatus?.status === "invited" && (
                 <>
                   <p className="text-sm text-[var(--ink-soft)]">Você é mensalista. Vai jogar?</p>
-                  <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={loading || closed}>
-                    ✓ Vou jogar
+                  <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={busy || closed}>
+                    {busy ? <Spinner /> : "✓"} Vou jogar
                   </button>
-                  <button className="btn btn-outline" onClick={() => doAction("decline")} disabled={loading}>
-                    Não vou este dia
+                  <button className="btn btn-outline" onClick={() => doAction("decline")} disabled={busy}>
+                    {busy && <Spinner />} Não vou este dia
                   </button>
                 </>
               )}
@@ -226,25 +232,25 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               )}
 
               {myStatus?.status === "reserved" && (
-                <button className="btn btn-primary" onClick={() => doAction("reserve")} disabled={loading}>
-                  Ver Pix pendente
+                <button className="btn btn-primary" onClick={() => doAction("reserve")} disabled={busy}>
+                  {busy && <Spinner />} Ver Pix pendente
                 </button>
               )}
 
               {(myStatus == null || ["declined", "withdrawn"].includes(myStatus.status)) && (
                 isMember ? (
-                  <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={loading || closed}>
-                    ✓ Vou jogar
+                  <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={busy || closed}>
+                    {busy ? <Spinner /> : "✓"} Vou jogar
                   </button>
                 ) : (
                   <>
                     <button className="btn btn-primary" onClick={() => doAction("reserve")}
-                      disabled={loading || closed || game.spots_available <= 0}>
-                      Participar — {fmtMoney(Number(game.dropin_fee))} via Pix
+                      disabled={busy || closed || game.spots_available <= 0}>
+                      {busy && <Spinner />} Participar — {fmtMoney(Number(game.dropin_fee))} via Pix
                     </button>
                     {game.spots_available <= 0 && !closed && (
-                      <button className="btn btn-outline" onClick={() => doAction("reserve")} disabled={loading}>
-                        Entrar na lista de espera
+                      <button className="btn btn-outline" onClick={() => doAction("reserve")} disabled={busy}>
+                        {busy && <Spinner />} Entrar na lista de espera
                       </button>
                     )}
                   </>

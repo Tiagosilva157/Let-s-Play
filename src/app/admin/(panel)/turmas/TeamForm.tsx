@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveTeam } from "./actions";
+import Spinner from "@/components/Spinner";
 
 const WEEKDAYS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
@@ -65,7 +66,7 @@ export default function TeamForm({ team }: { team?: TeamValues }) {
         </select>
       </Field>
 
-      <button className="btn btn-primary" disabled={pending}>{pending ? "Salvando..." : team?.id ? "Salvar alterações" : "Criar turma"}</button>
+      <button className="btn btn-primary" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : team?.id ? "Salvar alterações" : "Criar turma"}</button>
     </form>
   );
 }

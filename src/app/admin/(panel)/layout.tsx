@@ -1,5 +1,6 @@
-import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
+import NavLink from "./NavLink";
+import LogoutButton from "./LogoutButton";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const admin = await requireAdmin();
@@ -16,18 +17,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--surface)]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="Let's Play" className="h-8 w-auto" />
-          <span className="text-sm text-[var(--ink-soft)]">{admin.name}</span>
+          <LogoutButton name={admin.name} />
         </div>
         <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 pb-2">
-          {nav.map((n) => (
-            <Link key={n.href} href={n.href}
-              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--ink-soft)] hover:bg-[var(--bg)] hover:text-[var(--ink)]">
-              {n.label}
-            </Link>
-          ))}
+          {nav.map((n) => <NavLink key={n.href} href={n.href} label={n.label} />)}
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>

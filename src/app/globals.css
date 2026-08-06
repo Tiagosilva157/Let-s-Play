@@ -88,3 +88,23 @@ body {
 .badge-warn { background: var(--warn-bg); color: var(--warn); }
 .badge-danger { background: var(--danger-bg); color: var(--danger); }
 .badge-neutral { background: #eef0f3; color: var(--ink-soft); }
+
+/* indicador de carregamento (bola da marca girando) */
+@keyframes lp-spin { to { transform: rotate(360deg); } }
+.lp-spin { animation: lp-spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .lp-spin { animation-duration: 2.4s; }
+}
+
+/* barra de progresso do topo durante navegação */
+@keyframes lp-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.lp-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: lp-bar 1s ease-in-out infinite;
+}

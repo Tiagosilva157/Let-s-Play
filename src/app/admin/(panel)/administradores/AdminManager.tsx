@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createAdmin, resetAdminPassword, deleteAdmin } from "./actions";
+import Spinner from "@/components/Spinner";
 
 export interface AdminRow { id: string; name: string; email: string; role: string; isMe: boolean }
 
@@ -65,7 +66,7 @@ export default function AdminManager({ admins, meIsOwner }: { admins: AdminRow[]
           <input name="email" className="input" type="email" placeholder="E-mail de acesso" required />
           <input name="password" className="input" type="password" placeholder="Senha (mínimo 8 caracteres)" minLength={8} required />
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? "Criando..." : "Criar administrador"}</button>
+            <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? <><Spinner /> Criando...</> : "Criar administrador"}</button>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowForm(false)}>Cancelar</button>
           </div>
         </form>
@@ -76,7 +77,7 @@ export default function AdminManager({ admins, meIsOwner }: { admins: AdminRow[]
           <h2 className="font-bold">Alterar senha de {resetFor.name}</h2>
           <input name="password" className="input" type="password" placeholder="Nova senha (mínimo 8 caracteres)" minLength={8} required autoFocus />
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? "Salvando..." : "Salvar nova senha"}</button>
+            <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : "Salvar nova senha"}</button>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => setResetFor(null)}>Cancelar</button>
           </div>
         </form>

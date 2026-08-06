@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveSettings, testAsaas, testGpConnect } from "./actions";
+import Spinner from "@/components/Spinner";
 
 interface Current {
   asaas_api_key: string; asaas_env: string; asaas_webhook_token: string;
@@ -83,15 +84,15 @@ export default function SettingsForm({ current, meIsOwner }: { current: Current;
           <input name="gpconnect_base_url" className="input" defaultValue={current.gpconnect_base_url} />
         </Field>
 
-        <button className="btn btn-primary" disabled={pending}>{pending ? "Salvando..." : "Salvar configurações"}</button>
+        <button className="btn btn-primary" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : "Salvar configurações"}</button>
       </form>
 
       <div className="card space-y-3 p-5">
         <h2 className="font-bold">🔍 Testar integrações</h2>
-        <button className="btn btn-outline btn-sm" disabled={pending} onClick={runTestAsaas}>Testar conexão com o Asaas</button>
+        <button className="btn btn-outline btn-sm" disabled={pending} onClick={runTestAsaas}>{pending && <Spinner />} Testar conexão com o Asaas</button>
         <form action={runTestGp} className="flex flex-col gap-2 sm:flex-row">
           <input name="test_phone" className="input sm:flex-1" type="tel" placeholder="Seu WhatsApp para teste: (11) 99999-9999" />
-          <button className="btn btn-outline btn-sm" disabled={pending}>Enviar mensagem de teste</button>
+          <button className="btn btn-outline btn-sm" disabled={pending}>{pending && <Spinner />} Enviar mensagem de teste</button>
         </form>
       </div>
     </div>
