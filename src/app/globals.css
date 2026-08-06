@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --ink: #16181d;
+  --ink-soft: #5c6370;
+  --brand: #0f6fde;
+  --brand-ink: #ffffff;
+  --success: #16794c;
+  --success-bg: #e6f6ee;
+  --warn: #9a6700;
+  --warn-bg: #fff4d6;
+  --danger: #c53030;
+  --danger-bg: #fdeaea;
+  --line: #e6e8ec;
+  --radius: 14px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-brand: var(--brand);
+  --color-line: var(--line);
+  --font-sans: var(--font-geist-sans);
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 12px;
+  font-weight: 600;
+  padding: 0.9rem 1.25rem;
+  font-size: 1rem;
+  transition: transform 0.05s ease, opacity 0.15s ease;
+  cursor: pointer;
+  border: none;
+  width: 100%;
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--brand); color: var(--brand-ink); }
+.btn-success { background: var(--success); color: #fff; }
+.btn-outline { background: transparent; border: 1.5px solid var(--line); color: var(--ink); }
+.btn-danger-soft { background: var(--danger-bg); color: var(--danger); }
+.btn-sm { padding: 0.45rem 0.9rem; font-size: 0.875rem; width: auto; }
+
+.input {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  font-size: 1.05rem;
+  background: var(--surface);
+  outline: none;
+}
+.input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgb(15 111 222 / 0.12); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-success { background: var(--success-bg); color: var(--success); }
+.badge-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-danger { background: var(--danger-bg); color: var(--danger); }
+.badge-neutral { background: #eef0f3; color: var(--ink-soft); }
