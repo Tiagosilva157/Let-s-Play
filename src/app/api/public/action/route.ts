@@ -4,11 +4,15 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { getSessionPlayer } from "@/lib/session";
 import { Asaas } from "@/lib/asaas";
-import { enqueueListUpdate } from "@/lib/messaging";
+import { ensureAsaasCustomer, normalizeCpfCnpj, MissingCustomerDataError } from "@/lib/asaas-customer";
+import { enqueueListUpdate, sendPixToPlayer } from "@/lib/messaging";
 
 const Body = z.object({
   gameId: z.string().uuid(),
   action: z.enum(["confirm", "decline", "withdraw", "reserve"]),
+  // dados exigidos pelo Asaas, coletados no link público quando faltarem
+  cpf: z.string().max(20).optional(),
+  email: z.string().max(120).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -21,9 +25,13 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // é mensalista neste jogo?
-  const { data: game } = await db.from("games").select("id, team_id, date, teams(dropin_fee, name)").eq("id", gameId).single();
+  const { data: game } = await db
+    .from("games")
+    .select("id, team_id, date, time, teams(dropin_fee, name, reservation_minutes)")
+    .eq("id", gameId)
+    .single();
   if (!game) return NextResponse.json({ error: "game_not_found" }, { status: 404 });
+
   const { data: membership } = await db
     .from("team_members")
     .select("id")
@@ -44,7 +52,6 @@ export async function POST(req: NextRequest) {
   } else if (action === "withdraw" && !isMember) {
     const { data } = await db.rpc("fn_withdraw_dropin", { p_game_id: gameId, p_player_id: player.id });
     result = data;
-    // reserva desfeita → cancela cobrança pendente
     if (result?.ok && result.was_reserved) {
       const { data: charge } = await db
         .from("charges")
@@ -57,25 +64,37 @@ export async function POST(req: NextRequest) {
       }
     }
   } else if (action === "reserve" && !isMember) {
+    // 1. o Asaas exige CPF; pedimos ao jogador antes de segurar a vaga
+    const { data: p } = await db
+      .from("players")
+      .select("id, name, phone, email, cpf_cnpj, asaas_customer_id")
+      .eq("id", player.id).single();
+
+    const cpfInput = normalizeCpfCnpj(parsed.data.cpf);
+    const emailInput = parsed.data.email?.trim();
+    if (cpfInput || emailInput) {
+      await db.from("players").update({
+        ...(cpfInput ? { cpf_cnpj: cpfInput } : {}),
+        ...(emailInput ? { email: emailInput } : {}),
+      }).eq("id", player.id);
+      if (cpfInput) p!.cpf_cnpj = cpfInput;
+      if (emailInput) p!.email = emailInput;
+    }
+    if (!normalizeCpfCnpj(p!.cpf_cnpj)) {
+      return NextResponse.json({ error: "needs_billing_data", needs: ["cpf", "email"] }, { status: 200 });
+    }
+
+    // 2. só então reservamos a vaga
     const { data } = await db.rpc("fn_reserve_dropin", { p_game_id: gameId, p_player_id: player.id });
     result = data;
+
+    const team = game.teams as unknown as { dropin_fee: number; name: string; reservation_minutes: number };
+
     if (result?.ok && !result.already_reserved) {
-      // cria cobrança Pix
       try {
-        const team = game.teams as unknown as { dropin_fee: number; name: string };
-        let asaasCustomerId: string;
-        const { data: p } = await db.from("players").select("asaas_customer_id, name, phone").eq("id", player.id).single();
-        if (p?.asaas_customer_id) {
-          asaasCustomerId = p.asaas_customer_id;
-        } else {
-          const customer = await Asaas.createCustomer({
-            name: p!.name, mobilePhone: p!.phone, externalReference: player.id,
-          });
-          asaasCustomerId = customer.id;
-          await db.from("players").update({ asaas_customer_id: customer.id }).eq("id", player.id);
-        }
+        const customerId = await ensureAsaasCustomer(p!);
         const payment = await Asaas.createPixPayment({
-          customer: asaasCustomerId,
+          customer: customerId,
           value: Number(team.dropin_fee),
           dueDate: new Date().toISOString().slice(0, 10),
           description: `${team.name} — jogo ${game.date}`,
@@ -93,10 +112,20 @@ export async function POST(req: NextRequest) {
           .select("id").single();
         await db.from("game_participants").update({ charge_id: charge!.id }).eq("id", result.participant_id as string);
         result.pix = { qr: qr.encodedImage, copypaste: qr.payload, amount: team.dropin_fee };
+
+        // 3. manda o Pix também no WhatsApp do jogador
+        await sendPixToPlayer({
+          teamId: game.team_id, phone: p!.phone, playerName: p!.name, teamName: team.name,
+          date: game.date, time: String(game.time), amount: Number(team.dropin_fee),
+          copypaste: qr.payload, minutes: team.reservation_minutes ?? 15,
+        }).catch((e) => console.error("[whatsapp] pix individual:", e));
       } catch (e) {
         console.error("Asaas charge failed", e);
-        // desfaz reserva para não travar a vaga sem meio de pagamento
+        // libera a vaga para não travar a lista sem meio de pagamento
         await db.rpc("fn_withdraw_dropin", { p_game_id: gameId, p_player_id: player.id, p_source: "system" });
+        if (e instanceof MissingCustomerDataError) {
+          return NextResponse.json({ error: "needs_billing_data", needs: ["cpf"] }, { status: 200 });
+        }
         return NextResponse.json({ error: "payment_provider_error" }, { status: 502 });
       }
     } else if (result?.ok && result.already_reserved) {
@@ -117,7 +146,7 @@ export async function POST(req: NextRequest) {
       entity: "game_participants", entity_id: gameId,
       after: result as unknown as Record<string, unknown>,
     });
-    if (action !== "reserve") await enqueueListUpdate(gameId).catch(() => {});
+    if (action !== "reserve") await enqueueListUpdate(gameId).catch((e) => console.error("[whatsapp]", e));
   }
 
   return NextResponse.json(result ?? { ok: false, error: "unknown" });

@@ -42,7 +42,7 @@ const { data: game } = await db.from("games").insert({
 console.log("\n1. Abertura de lista (fn_open_lists)");
 const open = await db.rpc("fn_open_lists");
 const { data: invited } = await db.from("game_participants").select("*").eq("game_id", game.id);
-check("lista aberta", open.data?.opened >= 1);
+check("lista aberta", (open.data?.count ?? 0) >= 1 && Array.isArray(open.data?.opened));
 check("2 mensalistas convidados (invited)", invited?.filter((p) => p.status === "invited").length === 2);
 
 console.log("\n2. Mensalista confirma / recusa");

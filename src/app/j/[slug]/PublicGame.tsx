@@ -28,10 +28,12 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   isMember: boolean;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<"idle" | "phone" | "code" | "name">("idle");
+  const [step, setStep] = useState<"idle" | "phone" | "code" | "name" | "billing">("idle");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [email, setEmail] = useState("");
   const [pix, setPix] = useState<Pix | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, startRefresh] = useTransition();
@@ -70,6 +72,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      // não é erro: o sistema precisa de CPF/e-mail para emitir a cobrança
+      if (data?.error === "needs_billing_data") return data;
       if (!res.ok || data.error) {
         setError(errorMessages[data.error] ?? "Algo deu errado. Tente novamente.");
         return null;
@@ -96,11 +100,13 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     setStep("idle");
   }
 
-  async function doAction(action: string) {
-    const data = await api("/api/public/action", { gameId: game.game_id, action });
+  async function doAction(action: string, billing?: { cpf: string; email: string }) {
+    const data = await api("/api/public/action", { gameId: game.game_id, action, ...billing });
     if (!data) return;
+    // o Asaas exige CPF para emitir a cobrança — pedimos na hora
+    if (data.error === "needs_billing_data") { setStep("billing"); return; }
     if (data.waitlisted) { refresh(); return; }
-    if (data.pix) { setPix(data.pix); return; }
+    if (data.pix) { setPix(data.pix); setStep("idle"); return; }
     refresh();
   }
 
@@ -184,6 +190,24 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
             </>
           )}
 
+          {step === "billing" && (
+            <>
+              <p className="text-sm font-medium">Falta pouco! Precisamos destes dados para gerar seu Pix:</p>
+              <input className="input" inputMode="numeric" placeholder="CPF (somente números)"
+                value={cpf} onChange={(e) => setCpf(e.target.value.replace(/\D/g, "").slice(0, 14))} autoFocus />
+              <input className="input" type="email" placeholder="Seu e-mail"
+                value={email} onChange={(e) => setEmail(e.target.value)} />
+              <button className="btn btn-primary"
+                onClick={() => doAction("reserve", { cpf, email })}
+                disabled={busy || cpf.replace(/\D/g, "").length < 11 || !email.includes("@")}>
+                {busy ? <><Spinner /> Gerando Pix...</> : "Gerar Pix e reservar vaga"}
+              </button>
+              <p className="text-xs text-[var(--ink-soft)]">
+                O CPF é exigido pelo banco para emitir a cobrança Pix. Seus dados não aparecem para os outros jogadores.
+              </p>
+            </>
+          )}
+
           {step === "name" && (
             <>
               <label className="text-sm font-medium">Como podemos te chamar?</label>
@@ -195,7 +219,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
             </>
           )}
 
-          {player && (
+          {player && step !== "billing" && (
             <>
               <p className="text-sm">Olá, <b>{player.name.split(" ")[0]}</b>! 👋</p>
 

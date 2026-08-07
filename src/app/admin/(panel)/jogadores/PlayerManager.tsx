@@ -7,6 +7,7 @@ import Spinner from "@/components/Spinner";
 
 export interface PlayerRow {
   id: string; name: string; phone: string; phoneRaw: string; notes: string;
+  email: string; cpf: string; cpfRaw: string;
   active: boolean; teams: string[]; teamIds: string[];
 }
 export interface TeamOption { id: string; name: string }
@@ -59,6 +60,10 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
           {error && <p className="rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p>}
           <input name="name" className="input" placeholder="Nome e sobrenome" defaultValue={editing?.name} required />
           <input name="phone" className="input" type="tel" placeholder="WhatsApp: (11) 99999-9999" defaultValue={editing?.phoneRaw} required />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input name="email" className="input" type="email" placeholder="E-mail (para cobranças)" defaultValue={editing?.email} />
+            <input name="cpf_cnpj" className="input" inputMode="numeric" placeholder="CPF (obrigatório p/ cobrar)" defaultValue={editing?.cpfRaw} />
+          </div>
           <input name="notes" className="input" placeholder="Observações (opcional)" defaultValue={editing?.notes} />
 
           <PlayerTypePicker teams={teams} initialTeamIds={editing?.teamIds ?? []} />
@@ -79,12 +84,13 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
           <div key={p.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="font-medium">{p.name}</p>
-              <p className="text-sm text-[var(--ink-soft)]">{p.phone}{p.notes ? ` · ${p.notes}` : ""}</p>
+              <p className="text-sm text-[var(--ink-soft)]">{p.phone}{p.email ? ` · ${p.email}` : ""}{p.cpf ? ` · ${p.cpf}` : ""}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {p.teams.length > 0
                 ? <span className="badge badge-neutral">Mensalista: {p.teams.join(", ")}</span>
                 : <span className="badge badge-neutral">Avulso</span>}
+              {!p.cpfRaw && <span className="badge badge-warn" title="Sem CPF não é possível gerar cobrança">Sem CPF</span>}
               {!p.active && <span className="badge badge-danger">Inativo</span>}
               <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => { setEditing(p); setShowForm(false); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</button>
               <button className={`btn btn-sm ${p.active ? "btn-danger-soft" : "btn-outline"}`} disabled={pending} onClick={() => toggle(p)}>

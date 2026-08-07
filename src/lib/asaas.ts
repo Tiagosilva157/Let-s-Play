@@ -24,7 +24,11 @@ async function asaas<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export interface AsaasCustomer { id: string; name: string; mobilePhone?: string }
+export interface AsaasCustomer { id: string; name: string; mobilePhone?: string; email?: string; cpfCnpj?: string }
+export interface CustomerInput {
+  name: string; mobilePhone: string; cpfCnpj: string;
+  email?: string; externalReference?: string;
+}
 export interface AsaasPayment {
   id: string; status: string; value: number; dueDate: string;
   invoiceUrl?: string;
@@ -32,8 +36,13 @@ export interface AsaasPayment {
 export interface AsaasPixQr { encodedImage: string; payload: string; expirationDate?: string }
 
 export const Asaas = {
-  createCustomer: (data: { name: string; mobilePhone: string; cpfCnpj?: string; externalReference?: string }) =>
+  // O Asaas exige CPF/CNPJ para emitir qualquer cobrança; o e-mail habilita
+  // as notificações automáticas de vencimento.
+  createCustomer: (data: CustomerInput) =>
     asaas<AsaasCustomer>("/customers", { method: "POST", body: JSON.stringify(data) }),
+
+  updateCustomer: (id: string, data: Partial<CustomerInput>) =>
+    asaas<AsaasCustomer>(`/customers/${id}`, { method: "POST", body: JSON.stringify(data) }),
 
   createPixPayment: (data: {
     customer: string; value: number; dueDate: string; description: string; externalReference: string;

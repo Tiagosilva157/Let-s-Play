@@ -305,9 +305,10 @@ export const MANUAL: ManualSection[] = [
     blocks: [
       { type: "fields", items: [
         { label: "O jogador não recebeu o código", text: "Confira se o número está com DDD e se o token do GP Connect está válido em Configurações, usando o teste de mensagem." },
-        { label: "A lista não chegou no grupo", text: "Verifique se o ID do grupo está preenchido na turma e se o modo de envio não está em Somente manual. Avisos de falha aparecem na tela inicial." },
+        { label: "A lista não chegou no grupo", text: "Verifique se o ID do grupo está no formato 1203...@g.us, se o modo de envio não está em Somente manual e se o token do WhatsApp está correto em Configurações. Avisos de falha aparecem na tela inicial." },
         { label: "O Pix não confirmou a vaga", text: "Veja em Financeiro se a cobrança consta como paga. O sistema também confere sozinho de tempos em tempos e corrige diferenças." },
         { label: "Não consigo marcar alguém como mensalista", text: "Cadastre uma turma primeiro. Mensalista sempre pertence a uma turma." },
+        { label: "A cobrança não foi criada", text: "O banco exige CPF e e-mail do jogador para emitir qualquer cobrança. Abra o cadastro do jogador e preencha esses campos — quem estiver sem CPF aparece marcado na lista de Jogadores." },
         { label: "A lista fechou antes da hora", text: "Revise o campo Confirmar até nas configurações da turma. Ele conta horas antes do jogo." },
         { label: "Reabri a lista e ela fechou sozinha", text: "Ao reabrir uma lista com o prazo vencido, o sistema estende o prazo até o horário do jogo automaticamente, então ela permanece aberta." },
         { label: "Um jogo não foi criado", text: "Confirme se a turma está Ativa e se o dia da semana está correto. Os jogos são gerados para as próximas semanas, uma vez por dia." },

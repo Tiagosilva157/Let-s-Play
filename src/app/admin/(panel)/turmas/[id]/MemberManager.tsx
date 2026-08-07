@@ -51,6 +51,10 @@ export default function MemberManager({ teamId, members }: { teamId: string; mem
           {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
           <input name="player_name" className="input" placeholder="Nome do jogador" required />
           <input name="player_phone" className="input" type="tel" placeholder="WhatsApp: (11) 99999-9999" required />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input name="player_email" className="input" type="email" placeholder="E-mail (para cobranças)" />
+            <input name="player_cpf" className="input" inputMode="numeric" placeholder="CPF (obrigatório p/ cobrar)" />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <input name="monthly_fee_override" className="input" type="number" step="0.01" placeholder="Valor (padrão da turma)" />
             <input name="due_day" className="input" type="number" min={1} max={28} defaultValue={10} placeholder="Dia do vencimento" />

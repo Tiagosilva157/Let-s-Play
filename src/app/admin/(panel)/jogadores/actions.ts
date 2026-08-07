@@ -9,8 +9,22 @@ import { normalizePhone } from "@/lib/phone";
 const PlayerSchema = z.object({
   name: z.string().min(2).max(80),
   phone: z.string().min(10).max(20),
+  // e-mail e CPF são exigidos pelo Asaas para emitir cobranças
+  email: z.string().max(120).optional().or(z.literal("")),
+  cpf_cnpj: z.string().max(20).optional().or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
 });
+
+/** Normaliza e valida os campos de cobrança; devolve erro amigável. */
+async function billingFields(data: { email?: string; cpf_cnpj?: string }) {
+  const { normalizeCpfCnpj } = await import("@/lib/asaas-customer");
+  const raw = data.cpf_cnpj?.trim();
+  const cpf = normalizeCpfCnpj(raw);
+  if (raw && !cpf) return { error: "CPF/CNPJ inválido. Use 11 dígitos (CPF) ou 14 (CNPJ)." };
+  const email = data.email?.trim() || null;
+  if (email && !email.includes("@")) return { error: "E-mail inválido." };
+  return { values: { email, cpf_cnpj: cpf } };
+}
 
 /** Sincroniza os vínculos de mensalista do jogador com as turmas marcadas. */
 async function syncMemberships(playerId: string, teamIds: string[]) {
@@ -43,10 +57,16 @@ export async function createPlayer(formData: FormData) {
   const phone = normalizePhone(parsed.data.phone);
   if (!phone) return { error: "Telefone inválido. Use DDD + número." };
 
+  const billing = await billingFields(parsed.data);
+  if (billing.error) return { error: billing.error };
+
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("players")
-    .insert({ name: parsed.data.name.trim(), phone, notes: parsed.data.notes || null })
+    .insert({
+      name: parsed.data.name.trim(), phone, notes: parsed.data.notes || null,
+      ...billing.values,
+    })
     .select("id")
     .single();
   if (error) return { error: error.code === "23505" ? "Já existe um jogador com esse telefone." : "Erro ao criar jogador." };
@@ -65,11 +85,17 @@ export async function updatePlayer(playerId: string, formData: FormData) {
   const phone = normalizePhone(parsed.data.phone);
   if (!phone) return { error: "Telefone inválido." };
 
+  const billing = await billingFields(parsed.data);
+  if (billing.error) return { error: billing.error };
+
   const db = supabaseAdmin();
   const { data: before } = await db.from("players").select("phone").eq("id", playerId).single();
   const { error } = await db
     .from("players")
-    .update({ name: parsed.data.name.trim(), phone, notes: parsed.data.notes || null })
+    .update({
+      name: parsed.data.name.trim(), phone, notes: parsed.data.notes || null,
+      ...billing.values,
+    })
     .eq("id", playerId);
   if (error) return { error: error.code === "23505" ? "Já existe um jogador com esse telefone." : "Erro ao salvar." };
 

@@ -1,40 +1,53 @@
-// Fila de mensagens WhatsApp com debounce por dedupe_key.
+// Fila de mensagens WhatsApp (GP Connect) com debounce por dedupe_key.
+//
+// O despacho acontece de duas formas:
+//  1. imediatamente, em processo, logo após enfileirar (dispatchPending);
+//  2. pelo cron (/api/cron/tick), que serve de rede de segurança para
+//     mensagens agrupadas, agendadas e para novas tentativas após falha.
+// Assim o envio nunca depende de o cron estar funcionando.
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { formatPhoneBR } from "@/lib/phone";
-
-/**
- * Em produção a fila é despachada pelo Vercel Cron (1/min).
- * Em desenvolvimento não há cron — então damos um "chute" na fila
- * chamando o endpoint localmente (fire-and-forget) após enfileirar.
- */
-export function kickQueueInDev() {
-  if (process.env.NODE_ENV === "production") return;
-  const base = process.env.NEXT_PUBLIC_APP_URL?.startsWith("http://localhost")
-    ? process.env.NEXT_PUBLIC_APP_URL
-    : "http://localhost:3000";
-  fetch(`${base}/api/cron/tick`, {
-    headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-  }).catch(() => {});
-}
+import { GpConnect } from "@/lib/gpconnect";
 
 function fmtDate(d: string) {
   const [y, m, day] = d.split("-");
   return `${day}/${m}/${y.slice(2)}`;
 }
 
-export async function buildListMessage(gameId: string): Promise<{ body: string; team: { whatsapp_group_id: string | null; message_mode: string; batch_minutes: number; id: string } } | null> {
+function fmtMoney(v: number) {
+  return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+interface TeamInfo {
+  id: string; name: string; address: string; capacity: number;
+  whatsapp_group_id: string | null; message_mode: string; batch_minutes: number; slug: string;
+}
+
+async function loadGame(gameId: string) {
   const db = supabaseAdmin();
   const { data: g } = await db
     .from("games")
-    .select("id, date, time, address_override, capacity_override, teams(id, name, address, capacity, whatsapp_group_id, message_mode, batch_minutes, slug)")
+    .select("id, date, time, address_override, capacity_override, status, confirm_until, teams(id, name, address, capacity, whatsapp_group_id, message_mode, batch_minutes, slug)")
     .eq("id", gameId)
-    .single();
+    .maybeSingle();
   if (!g) return null;
-  const t = g.teams as unknown as { id: string; name: string; address: string; capacity: number; whatsapp_group_id: string | null; message_mode: string; batch_minutes: number; slug: string };
+  return { game: g, team: g.teams as unknown as TeamInfo };
+}
+
+export function publicLink(slug: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+  return base ? `${base}/j/${slug}` : "";
+}
+
+export async function buildListMessage(gameId: string): Promise<{ body: string; team: TeamInfo } | null> {
+  const loaded = await loadGame(gameId);
+  if (!loaded) return null;
+  const { game: g, team: t } = loaded;
+  const db = supabaseAdmin();
 
   const { data: parts } = await db
     .from("game_participants")
-    .select("kind, status, created_at, players(name)")
+    .select("kind, status, confirmed_at, players(name)")
     .eq("game_id", gameId)
     .in("status", ["confirmed", "waitlist"])
     .order("confirmed_at", { ascending: true });
@@ -42,7 +55,7 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
   const confirmed = (parts ?? []).filter((p) => p.status === "confirmed");
   const waitlist = (parts ?? []).filter((p) => p.status === "waitlist");
   const capacity = g.capacity_override ?? t.capacity;
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const link = publicLink(t.slug);
 
   const lines = [
     `🏐 *Lista atualizada — ${t.name}*`,
@@ -50,52 +63,181 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
     `📍 ${g.address_override ?? t.address}`,
     ``,
     `*Confirmados (${confirmed.length}/${capacity}):*`,
-    ...confirmed.map((p, i) => {
-      const name = (p.players as unknown as { name: string }).name;
-      return `${i + 1}. ${name} — ${p.kind === "member" ? "Mensalista" : "Avulso ✅ Pago"}`;
-    }),
+    ...(confirmed.length
+      ? confirmed.map((p, i) => {
+          const name = (p.players as unknown as { name: string }).name;
+          return `${i + 1}. ${name} — ${p.kind === "member" ? "Mensalista" : "Avulso ✅ Pago"}`;
+        })
+      : ["_ainda ninguém confirmou_"]),
   ];
   if (waitlist.length) {
     lines.push(``, `*Lista de espera:*`, ...waitlist.map((p, i) => `${i + 1}. ${(p.players as unknown as { name: string }).name}`));
   }
   const available = capacity - confirmed.length;
   lines.push(``, available > 0 ? `✅ Vagas disponíveis: *${available}*` : `🚫 Lista completa!`);
-  if (baseUrl) lines.push(``, `Confirme sua presença: ${baseUrl}/j/${t.slug}`);
+  if (link) lines.push(``, `Confirme sua presença: ${link}`);
 
   return { body: lines.join("\n"), team: t };
 }
 
-/** Enfileira atualização da lista no grupo, com debounce conforme message_mode. */
+/** Insere na fila e tenta despachar na hora (respeitando o modo da turma). */
+async function enqueue(row: {
+  team_id: string | null; game_id?: string | null; kind: "group" | "individual";
+  recipient: string; body: string; dedupe_key?: string | null; delayMinutes?: number;
+}) {
+  const db = supabaseAdmin();
+  const delay = row.delayMinutes ?? 0;
+
+  if (row.dedupe_key) {
+    // substitui a mensagem pendente equivalente (debounce)
+    await db.from("message_dispatches").update({ status: "canceled" })
+      .eq("dedupe_key", row.dedupe_key).eq("status", "queued");
+  }
+
+  const { error } = await db.from("message_dispatches").insert({
+    team_id: row.team_id,
+    game_id: row.game_id ?? null,
+    kind: row.kind,
+    recipient: row.recipient,
+    body: row.body,
+    dedupe_key: row.dedupe_key ?? null,
+    scheduled_for: new Date(Date.now() + delay * 60_000).toISOString(),
+  });
+  if (error) {
+    console.error("[whatsapp] falha ao enfileirar:", error.message);
+    return;
+  }
+  if (delay === 0) void dispatchPending().catch((e) => console.error("[whatsapp] despacho:", e));
+}
+
+/** Envia a lista atualizada ao grupo, conforme o modo configurado na turma. */
 export async function enqueueListUpdate(gameId: string) {
   const built = await buildListMessage(gameId);
-  if (!built || !built.team.whatsapp_group_id) return;
+  if (!built) return;
   const { body, team } = built;
-  if (team.message_mode === "manual") return;
+  if (!team.whatsapp_group_id || team.message_mode === "manual") return;
 
-  const db = supabaseAdmin();
-  const delayMin = team.message_mode === "batched" ? team.batch_minutes : 0;
-  const dedupeKey = `list_updated:${gameId}`;
-
-  // substitui pendente igual (debounce)
-  await db.from("message_dispatches").update({ status: "canceled" }).eq("dedupe_key", dedupeKey).eq("status", "queued");
-  await db.from("message_dispatches").insert({
-    team_id: team.id,
-    game_id: gameId,
-    kind: "group",
-    recipient: team.whatsapp_group_id,
-    body,
-    dedupe_key: dedupeKey,
-    scheduled_for: new Date(Date.now() + delayMin * 60_000).toISOString(),
+  await enqueue({
+    team_id: team.id, game_id: gameId, kind: "group",
+    recipient: team.whatsapp_group_id, body,
+    dedupe_key: `list_updated:${gameId}`,
+    delayMinutes: team.message_mode === "batched" ? team.batch_minutes : 0,
   });
-  if (delayMin === 0) kickQueueInDev();
+}
+
+/** Anuncia no grupo que a lista abriu. */
+export async function enqueueListOpened(gameId: string) {
+  const loaded = await loadGame(gameId);
+  if (!loaded?.team.whatsapp_group_id) return;
+  const { game: g, team: t } = loaded;
+  if (t.message_mode === "manual") return;
+
+  const link = publicLink(t.slug);
+  const capacity = g.capacity_override ?? t.capacity;
+  const body = [
+    `🏐 *Lista aberta — ${t.name}*`,
+    `📅 ${fmtDate(g.date)} às ${String(g.time).slice(0, 5)}`,
+    `📍 ${g.address_override ?? t.address}`,
+    `👥 ${capacity} vagas`,
+    ``,
+    `Confirme sua presença até ${new Date(g.confirm_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.`,
+    link ? `\n${link}` : "",
+  ].filter(Boolean).join("\n");
+
+  await enqueue({
+    team_id: t.id, game_id: gameId, kind: "group",
+    recipient: t.whatsapp_group_id!, body,
+    dedupe_key: `list_opened:${gameId}`,
+  });
+}
+
+/** Manda o Pix do avulso direto no WhatsApp dele (copia e cola). */
+export async function sendPixToPlayer(opts: {
+  teamId: string; phone: string; playerName: string; teamName: string;
+  date: string; time: string; amount: number; copypaste: string; minutes: number;
+}) {
+  const body = [
+    `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
+    ``,
+    `Sua vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} está reservada por *${opts.minutes} minutos*.`,
+    ``,
+    `Valor: *${fmtMoney(opts.amount)}*`,
+    `Pague com o Pix copia e cola abaixo 👇`,
+    ``,
+    opts.copypaste,
+    ``,
+    `Assim que o pagamento for identificado, sua presença é confirmada automaticamente. ✅`,
+  ].join("\n");
+
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body });
+}
+
+/** Avisa o jogador que o pagamento foi confirmado. */
+export async function sendPaymentConfirmed(teamId: string, phone: string, playerName: string, teamName: string, date: string) {
+  const body = [
+    `✅ Pagamento confirmado, ${playerName.split(" ")[0]}!`,
+    ``,
+    `Sua presença no *${teamName}* de ${fmtDate(date)} está garantida.`,
+    `Bom jogo! 🏐`,
+  ].join("\n");
+  await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body });
 }
 
 export async function enqueueIndividual(teamId: string | null, phone: string, body: string) {
+  await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body });
+}
+
+export async function enqueueGroupMessage(teamId: string, groupId: string, body: string, gameId?: string) {
+  await enqueue({ team_id: teamId, game_id: gameId ?? null, kind: "group", recipient: groupId, body });
+}
+
+/**
+ * Envia as mensagens pendentes. Chamado logo após enfileirar e também pelo cron.
+ * Falhas são reagendadas com espera progressiva; após 3 tentativas viram "failed"
+ * e aparecem como alerta no painel.
+ */
+export async function dispatchPending(limit = 20): Promise<{ sent: number; failed: number }> {
   const db = supabaseAdmin();
-  await db.from("message_dispatches").insert({
-    team_id: teamId, kind: "individual", recipient: phone, body,
-  });
-  kickQueueInDev();
+  const { data: pending } = await db
+    .from("message_dispatches")
+    .select("*")
+    .eq("status", "queued")
+    .lte("scheduled_for", new Date().toISOString())
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  let sent = 0, failed = 0;
+  for (const m of pending ?? []) {
+    // marca como enviando para evitar envio duplicado por execuções simultâneas
+    const { data: claimed } = await db
+      .from("message_dispatches")
+      .update({ status: "sending" })
+      .eq("id", m.id)
+      .eq("status", "queued")
+      .select("id")
+      .maybeSingle();
+    if (!claimed) continue;
+
+    try {
+      if (m.kind === "group") await GpConnect.sendGroupMessage(m.recipient, m.body);
+      else await GpConnect.sendTextMessage(m.recipient, m.body);
+      await db.from("message_dispatches")
+        .update({ status: "sent", sent_at: new Date().toISOString(), error: null })
+        .eq("id", m.id);
+      sent++;
+    } catch (e) {
+      failed++;
+      const retries = (m.retries ?? 0) + 1;
+      console.error(`[whatsapp] envio falhou (tentativa ${retries}):`, String(e).slice(0, 200));
+      await db.from("message_dispatches").update({
+        status: retries >= 3 ? "failed" : "queued",
+        retries,
+        error: String(e).slice(0, 500),
+        scheduled_for: new Date(Date.now() + retries * 2 * 60_000).toISOString(),
+      }).eq("id", m.id);
+    }
+  }
+  return { sent, failed };
 }
 
 export { formatPhoneBR };

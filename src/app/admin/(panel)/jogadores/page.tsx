@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { formatPhoneBR } from "@/lib/phone";
+import { formatCpfCnpj } from "@/lib/asaas-customer";
 import PlayerManager, { type PlayerRow, type TeamOption } from "./PlayerManager";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export default async function PlayersPage() {
   const db = supabaseAdmin();
   const [{ data: players }, { data: teams }] = await Promise.all([
     db.from("players")
-      .select("id, name, phone, notes, active, team_members(status, team_id, teams(name))")
+      .select("id, name, phone, email, cpf_cnpj, notes, active, team_members(status, team_id, teams(name))")
       .order("name"),
     db.from("teams").select("id, name").eq("status", "active").order("name"),
   ]);
@@ -20,6 +21,9 @@ export default async function PlayersPage() {
     name: p.name,
     phone: formatPhoneBR(p.phone),
     phoneRaw: p.phone,
+    email: p.email ?? "",
+    cpf: formatCpfCnpj(p.cpf_cnpj),
+    cpfRaw: p.cpf_cnpj ?? "",
     notes: p.notes ?? "",
     active: p.active,
     teams: ((p.team_members as unknown as { status: string; teams: { name: string } }[] | null) ?? [])

@@ -1,7 +1,7 @@
 // Webhook Asaas — idempotente, validado por authToken.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { enqueueListUpdate } from "@/lib/messaging";
+import { enqueueListUpdate, sendPaymentConfirmed } from "@/lib/messaging";
 import { getAsaasConfig } from "@/lib/settings";
 
 const STATUS_MAP: Record<string, string> = {
@@ -82,7 +82,21 @@ export async function POST(req: NextRequest) {
         // pagamento de avulso confirmado → confirma vaga
         if ((payload.event === "PAYMENT_RECEIVED" || payload.event === "PAYMENT_CONFIRMED") && charge.type === "dropin" && charge.game_id) {
           const { data: result } = await db.rpc("fn_confirm_dropin_payment", { p_charge_id: charge.id });
-          if (result?.confirmed) await enqueueListUpdate(charge.game_id).catch(() => {});
+          if (result?.confirmed) {
+            await enqueueListUpdate(charge.game_id).catch((e) => console.error("[whatsapp]", e));
+            // avisa o jogador no WhatsApp que a vaga está garantida
+            const { data: info } = await db
+              .from("charges")
+              .select("team_id, players(name, phone), games(date), teams(name)")
+              .eq("id", charge.id).single();
+            if (info) {
+              const pl = info.players as unknown as { name: string; phone: string };
+              const tm = info.teams as unknown as { name: string };
+              const gm = info.games as unknown as { date: string } | null;
+              await sendPaymentConfirmed(info.team_id, pl.phone, pl.name, tm.name, gm?.date ?? "")
+                .catch((e) => console.error("[whatsapp] confirmação:", e));
+            }
+          }
           if (result?.pending_review) {
             await db.from("audit_logs").insert({
               actor_type: "webhook", action: "payment_after_full_list",

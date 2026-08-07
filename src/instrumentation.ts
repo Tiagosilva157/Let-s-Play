@@ -9,7 +9,9 @@ export async function register() {
   if (process.env.DISABLE_INTERNAL_CRON === "1") return;
   if (process.env.NODE_ENV !== "production") return; // em dev usamos kickQueueInDev
 
-  const base = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT ?? 3000}`;
+  // sempre chamamos o próprio processo (localhost): o container pode não
+  // resolver/alcançar o próprio domínio público, o que quebraria o agendador
+  const base = `http://127.0.0.1:${process.env.PORT ?? 3000}`;
   const headers = { authorization: `Bearer ${process.env.CRON_SECRET}` };
 
   const call = (path: string) =>

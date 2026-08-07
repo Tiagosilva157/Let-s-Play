@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, auditAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { buildListMessage, enqueueListUpdate, kickQueueInDev } from "@/lib/messaging";
+import { buildListMessage, enqueueListUpdate, enqueueListOpened, enqueueGroupMessage } from "@/lib/messaging";
 import { Asaas } from "@/lib/asaas";
 
 export async function adminConfirm(gameId: string, playerId: string, kind: "member" | "dropin") {
@@ -44,12 +44,12 @@ export async function cancelGame(gameId: string, reason: string) {
 
   const built = await buildListMessage(gameId);
   if (built?.team.whatsapp_group_id) {
-    await db.from("message_dispatches").insert({
-      team_id: built.team.id, game_id: gameId, kind: "group",
-      recipient: built.team.whatsapp_group_id,
-      body: `🚫 *Jogo cancelado*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`,
-    });
-    kickQueueInDev();
+    await enqueueGroupMessage(
+      built.team.id,
+      built.team.whatsapp_group_id,
+      `🚫 *Jogo cancelado*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`,
+      gameId
+    ).catch((e) => console.error("[whatsapp] cancelamento:", e));
   }
   revalidatePath(`/admin/jogos/${gameId}`);
 }
@@ -81,6 +81,8 @@ export async function toggleList(gameId: string, open: boolean) {
     await db.from("games").update({ status: "closed" }).eq("id", gameId);
   }
   await auditAdmin(admin.id, open ? "open_list" : "close_list", "games", gameId);
+  // abrir a lista avisa o grupo (era um envio que faltava)
+  if (open) await enqueueListOpened(gameId).catch((e) => console.error("[whatsapp] abertura:", e));
   revalidatePath(`/admin/jogos/${gameId}`);
 }
 
@@ -89,11 +91,11 @@ export async function sendListNow(gameId: string) {
   const db = supabaseAdmin();
   const built = await buildListMessage(gameId);
   if (!built?.team.whatsapp_group_id) return { error: "Turma sem grupo do WhatsApp configurado." };
-  await db.from("message_dispatches").insert({
-    team_id: built.team.id, game_id: gameId, kind: "group",
-    recipient: built.team.whatsapp_group_id, body: built.body,
-  });
-  kickQueueInDev();
+  try {
+    await enqueueGroupMessage(built.team.id, built.team.whatsapp_group_id, built.body, gameId);
+  } catch (e) {
+    return { error: "Falha ao enviar: " + String(e).slice(0, 160) };
+  }
   return { ok: true };
 }
 
