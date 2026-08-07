@@ -21,6 +21,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   reserved: { label: "Aguardando Pix", cls: "badge-warn" },
   waitlist: { label: "Lista de espera", cls: "badge-neutral" },
   withdrawn: { label: "Desistiu", cls: "badge-neutral" },
+  withdrawn_paid: { label: "Desistiu já pago — decidir", cls: "badge-danger" },
   no_show: { label: "Faltou", cls: "badge-danger" },
   removed: { label: "Removido", cls: "badge-neutral" },
   pending_review: { label: "Pagou sem vaga — decidir", cls: "badge-danger" },
@@ -99,7 +100,8 @@ export default function GameManager({ game, participants }: { game: Game; partic
           {others.map((p) => (
             <Row key={p.id} p={p} pending={pending}
               actions={
-                p.status === "pending_review" ? (
+                p.status === "pending_review" ||
+                (p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")) ? (
                   <div className="flex gap-1">
                     <button className="btn btn-outline btn-sm" onClick={() => run(() => resolvePendingReview(p.id, "credit"), "Crédito gerado.")}>Crédito</button>
                     <button className="btn btn-outline btn-sm" onClick={() => run(() => resolvePendingReview(p.id, "refund"), "Estorno solicitado.")}>Estornar</button>
@@ -125,7 +127,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Row({ p, actions }: { p: Participant; pending: boolean; actions: React.ReactNode }) {
-  const st = STATUS_LABEL[p.status] ?? { label: p.status, cls: "badge-neutral" };
+  const key = p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")
+    ? "withdrawn_paid"
+    : p.status;
+  const st = STATUS_LABEL[key] ?? { label: p.status, cls: "badge-neutral" };
   return (
     <li className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">

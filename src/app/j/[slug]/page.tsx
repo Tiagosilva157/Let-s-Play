@@ -28,12 +28,12 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
     .order("confirmed_at", { ascending: true });
 
   const player = await getSessionPlayer();
-  let myStatus: { status: string; kind: string } | null = null;
+  let myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null = null;
   let isMember = false;
   if (player) {
     const { data: gp } = await db
       .from("game_participants")
-      .select("status, kind")
+      .select("status, kind, promoted_from_waitlist")
       .eq("game_id", game.game_id)
       .eq("player_id", player.id)
       .maybeSingle();

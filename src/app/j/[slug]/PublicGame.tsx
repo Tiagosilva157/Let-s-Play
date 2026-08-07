@@ -24,9 +24,12 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   game: Game;
   participants: Participant[];
   player: Player | null;
-  myStatus: { status: string; kind: string } | null;
+  myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null;
   isMember: boolean;
 }) {
+  // prazo de desistência avaliado já na renderização (não só ao clicar)
+  const withdrawOpen = new Date(game.withdraw_until) > new Date();
+  const withdrawDeadline = new Date(game.withdraw_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const router = useRouter();
   const [step, setStep] = useState<"idle" | "phone" | "code" | "name" | "billing">("idle");
   const [phone, setPhone] = useState("");
@@ -229,12 +232,21 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                   <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm font-semibold text-[var(--success)]">
                     ✓ Você está confirmado{myStatus.kind === "dropin" ? " (pago)" : ""}!
                   </p>
-                  <button className="btn btn-danger-soft" onClick={() => doAction(isMember ? "decline" : "withdraw")} disabled={busy}>
-                    {busy && <Spinner />} Desistir da vaga
-                  </button>
-                  <p className="text-xs text-center text-[var(--ink-soft)]">
-                    Desistência sem cobrança até {new Date(game.withdraw_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                  </p>
+                  {withdrawOpen ? (
+                    <>
+                      <button className="btn btn-danger-soft" onClick={() => doAction(isMember ? "decline" : "withdraw")} disabled={busy}>
+                        {busy && <Spinner />} Desistir da vaga
+                      </button>
+                      <p className="text-xs text-center text-[var(--ink-soft)]">
+                        Você pode desistir até {withdrawDeadline}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm text-[var(--warn)]">
+                      O período para desistência encerrou em {withdrawDeadline}. Sua presença permanece confirmada
+                      {myStatus.kind === "dropin" ? " e o valor do jogo continua devido" : ""}.
+                    </p>
+                  )}
                 </>
               )}
 
@@ -251,8 +263,28 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               )}
 
               {myStatus?.status === "waitlist" && (
-                <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm font-semibold text-[var(--warn)]">
-                  Você está na lista de espera. Avisaremos se abrir vaga!
+                <>
+                  <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm font-semibold text-[var(--warn)]">
+                    Você está na lista de espera. Se abrir vaga, o Pix chega no seu WhatsApp com {`15 minutos`} para pagar!
+                  </p>
+                  <button className="btn btn-outline" onClick={() => doAction("withdraw")} disabled={busy}>
+                    {busy && <Spinner />} Sair da lista de espera
+                  </button>
+                </>
+              )}
+
+              {myStatus?.status === "removed" && (
+                <p className="rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">
+                  {myStatus.promoted_from_waitlist
+                    ? "Você subiu da lista de espera, mas o prazo de pagamento terminou e a vaga passou para o próximo. Não é possível entrar novamente neste jogo — até a próxima partida!"
+                    : "Sua participação neste jogo foi removida pelo organizador. Em caso de dúvida, fale com ele."}
+                </p>
+              )}
+
+              {myStatus?.status === "pending_review" && (
+                <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm text-[var(--warn)]">
+                  Seu pagamento foi recebido, mas a lista já estava completa. O organizador vai entrar em contato
+                  para devolver o valor ou transformá-lo em crédito para o próximo jogo.
                 </p>
               )}
 
