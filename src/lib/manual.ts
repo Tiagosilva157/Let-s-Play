@@ -175,6 +175,39 @@ export const MANUAL: ManualSection[] = [
     ],
   },
   {
+    id: "lista-espera",
+    icon: "⏳",
+    title: "Lista de espera",
+    summary: "Fila automática quando o jogo lota — com promoção em cascata.",
+    blocks: [
+      {
+        type: "p",
+        text: "Quando a lista enche, novos interessados entram em uma fila de espera, por ordem de chegada. Entrar na fila é gratuito: o pagamento só é exigido quando a vaga realmente abre. Assim ninguém paga por um jogo que talvez não jogue e não existe estorno para administrar.",
+      },
+      { type: "steps", items: [
+        "O jogo lota e o jogador entra na fila pelo link público, sem pagar nada.",
+        "Alguém desiste e a vaga abre: o primeiro da fila sobe automaticamente.",
+        "Ele recebe o Pix no WhatsApp com prazo de 15 minutos para pagar (ou o link, se ainda não tiver CPF cadastrado).",
+        "Pagou: presença confirmada, ele é avisado e a lista atualizada vai para o grupo.",
+        "Não pagou no prazo: perde a vez definitivamente naquele jogo e o próximo da fila sobe automaticamente — a cascata continua até alguém pagar ou a fila acabar.",
+      ]},
+      {
+        type: "p",
+        text: "Cada movimentação é anunciada no grupo: quem subiu da fila, quem perdeu a vez por não pagar e a lista atualizada. Os avisos individuais (Pix, prazo esgotado) vão no WhatsApp da própria pessoa. Tudo acontece sozinho, sem intervenção do administrador.",
+      },
+      { type: "fields", items: [
+        { label: "Quem perde a vez pode voltar?", text: "Naquele jogo, não. Se tentar entrar de novo, o sistema explica que o prazo de pagamento terminou e a vaga passou adiante. Nos próximos jogos ele participa normalmente." },
+        { label: "E se ninguém desistir?", text: "A fila simplesmente expira junto com o jogo. Como ninguém pagou para estar nela, ninguém precisa de reembolso." },
+        { label: "Mensalista na fila", text: "Situação rara (ele normalmente tem vaga garantida), mas se acontecer ele sobe direto como confirmado, sem precisar pagar." },
+        { label: "Onde acompanho a fila", text: "Na tela do jogo, seção Outros: quem está na espera, quem está com Pix pendente da promoção e quem perdeu a vez. As promoções também ficam no histórico." },
+      ]},
+      {
+        type: "tip",
+        text: "A ordem da fila é sagrada: o sistema sempre promove o primeiro que entrou, mesmo quando duas desistências acontecem ao mesmo tempo.",
+      },
+    ],
+  },
+  {
     id: "pagamentos",
     icon: "💳",
     title: "Pagamentos",
