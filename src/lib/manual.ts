@@ -229,6 +229,14 @@ export const MANUAL: ManualSection[] = [
       ]},
       {
         type: "p",
+        text: "A lista enviada ao grupo separa Mensalistas e Não mensalistas. Os mensalistas aparecem sempre, mesmo antes de responder, com uma marca ao lado: confirmado, aguardando ou não vem. Os não mensalistas aparecem em seguida, indicando quem já pagou e quem ainda está com o Pix pendente, além da lista de espera.",
+      },
+      {
+        type: "p",
+        text: "O número de vagas para não mensalistas é calculado na hora: é a capacidade menos os mensalistas que ainda seguram a vaga. Por exemplo, em uma quadra de 18 com 10 mensalistas, sobram 8 vagas. Se um mensalista avisa que não vem, passam a ser 9 vagas — e a mensagem já sai com esse número atualizado.",
+      },
+      {
+        type: "p",
         text: "Para vincular, você precisa do ID do grupo, que tem o formato de um número longo terminado em @g.us. Ele é colado no campo do grupo dentro da configuração da turma. O sistema recusa formatos diferentes desse para evitar mensagens perdidas.",
       },
       { type: "fields", items: [
