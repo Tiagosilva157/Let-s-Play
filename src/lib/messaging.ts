@@ -84,6 +84,8 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
 async function enqueue(row: {
   team_id: string | null; game_id?: string | null; kind: "group" | "individual";
   recipient: string; body: string; dedupe_key?: string | null; delayMinutes?: number;
+  /** false quando outra mensagem da mesma sequência vai disparar o envio */
+  dispatch?: boolean;
 }) {
   const db = supabaseAdmin();
   const delay = row.delayMinutes ?? 0;
@@ -107,7 +109,9 @@ async function enqueue(row: {
     console.error("[whatsapp] falha ao enfileirar:", error.message);
     return;
   }
-  if (delay === 0) void dispatchPending().catch((e) => console.error("[whatsapp] despacho:", e));
+  if (delay === 0 && row.dispatch !== false) {
+    void dispatchPending().catch((e) => console.error("[whatsapp] despacho:", e));
+  }
 }
 
 /** Envia a lista atualizada ao grupo, conforme o modo configurado na turma. */
@@ -151,25 +155,32 @@ export async function enqueueListOpened(gameId: string) {
   });
 }
 
-/** Manda o Pix do avulso direto no WhatsApp dele (copia e cola). */
+/**
+ * Manda o Pix do avulso no WhatsApp em DUAS mensagens:
+ *  1. as instruções;
+ *  2. apenas o código copia e cola, sozinho.
+ * O código precisa ficar isolado porque o WhatsApp transforma trechos dele
+ * em link quando vem junto de outro texto, atrapalhando a cópia.
+ */
 export async function sendPixToPlayer(opts: {
   teamId: string; phone: string; playerName: string; teamName: string;
   date: string; time: string; amount: number; copypaste: string; minutes: number;
 }) {
-  const body = [
+  const intro = [
     `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
     ``,
     `Sua vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} está reservada por *${opts.minutes} minutos*.`,
     ``,
     `Valor: *${fmtMoney(opts.amount)}*`,
-    `Pague com o Pix copia e cola abaixo 👇`,
     ``,
-    opts.copypaste,
+    `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`,
     ``,
     `Assim que o pagamento for identificado, sua presença é confirmada automaticamente. ✅`,
   ].join("\n");
 
-  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body });
+  // primeira mensagem não dispara: a segunda dispara as duas, mantendo a ordem
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false });
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim() });
 }
 
 /** Avisa o jogador que o pagamento foi confirmado. */
