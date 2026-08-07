@@ -263,9 +263,21 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
 
               {(myStatus == null || ["declined", "withdrawn"].includes(myStatus.status)) && (
                 isMember ? (
-                  <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={busy || closed}>
-                    {busy ? <Spinner /> : "✓"} Vou jogar
-                  </button>
+                  <>
+                    {myStatus != null && (
+                      <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm text-[var(--warn)]">
+                        Você avisou que não vem. Mudou de ideia? Confirme abaixo (se ainda houver vaga).
+                      </p>
+                    )}
+                    <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={busy || closed}>
+                      {busy ? <Spinner /> : "✓"} Vou jogar
+                    </button>
+                    {myStatus == null && (
+                      <button className="btn btn-outline" onClick={() => doAction("decline")} disabled={busy || closed}>
+                        {busy && <Spinner />} ❌ Não vou participar
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button className="btn btn-primary" onClick={() => doAction("reserve")}
