@@ -50,6 +50,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
 
   const errorMessages: Record<string, string> = {
     full: "A lista está cheia.",
+    promotion_expired: "Você subiu da lista de espera mas o prazo de pagamento terminou, então a vaga passou para o próximo. Não é possível entrar novamente neste jogo.",
     deadline_passed: "O prazo de confirmação já passou.",
     withdraw_deadline_passed: "O prazo para desistir já passou. O valor do dia continua devido.",
     list_not_open: "A lista ainda não está aberta.",

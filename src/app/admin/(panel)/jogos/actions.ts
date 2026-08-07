@@ -26,9 +26,15 @@ export async function adminRemove(gameId: string, playerId: string) {
   const db = supabaseAdmin();
   await db.from("game_participants").update({ status: "removed", source: "admin" })
     .eq("game_id", gameId).eq("player_id", playerId);
-  await db.rpc("fn_promote_waitlist", { p_game_id: gameId });
+  const { data: promo } = await db.rpc("fn_promote_waitlist", { p_game_id: gameId });
   await auditAdmin(admin.id, "admin_remove", "game_participants", `${gameId}:${playerId}`);
-  await enqueueListUpdate(gameId).catch(() => {});
+  const promoted = (promo?.promoted ?? []) as string[];
+  if (promoted.length) {
+    const { processPromotions } = await import("@/lib/waitlist");
+    await processPromotions(gameId, promoted).catch(() => {});
+  } else {
+    await enqueueListUpdate(gameId).catch(() => {});
+  }
   revalidatePath(`/admin/jogos/${gameId}`);
 }
 

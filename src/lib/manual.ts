@@ -259,7 +259,9 @@ export const MANUAL: ManualSection[] = [
       { type: "fields", items: [
         { label: "Duas pessoas pediram a última vaga junto", text: "O sistema resolve sozinho: uma entra e a outra recebe o aviso de lista cheia, com opção de entrar na espera. Não existe vaga duplicada." },
         { label: "O avulso pagou, mas a lista já tinha enchido", text: "A participação dele aparece marcada como Pagou sem vaga na tela do jogo, com os botões Crédito e Estornar para você decidir." },
-        { label: "Alguém desistiu e liberou vaga", text: "O primeiro da lista de espera é promovido automaticamente e a lista do grupo é atualizada." },
+        { label: "Alguém desistiu e liberou vaga", text: "O primeiro da lista de espera sobe automaticamente: recebe o Pix no WhatsApp com prazo de 15 minutos, e o grupo é avisado da movimentação." },
+        { label: "O promovido da fila não pagou no prazo", text: "Ele perde a vez definitivamente naquele jogo (não consegue entrar de novo) e o próximo da fila sobe automaticamente. Cada passo é anunciado no grupo — tudo sem intervenção sua." },
+        { label: "Entrar na lista de espera custa algo?", text: "Não. A posição na fila é gratuita — o pagamento só é exigido quando a vaga realmente abre. Assim ninguém paga por um jogo que talvez não jogue e não há estornos para administrar." },
         { label: "O jogo foi cancelado depois de gente pagar", text: "Cancele pelo painel: o grupo é avisado e todos os avulsos pagos ficam pendentes para você dar crédito ou estornar." },
         { label: "O jogador trocou de telefone", text: "Edite o número em Jogadores. As sessões antigas são derrubadas na hora, por segurança." },
         { label: "Alguém desistiu fora do prazo", text: "O sistema bloqueia a desistência e mantém a cobrança. Se quiser abrir exceção, remova a pessoa manualmente pela tela do jogo." },

@@ -1,8 +1,8 @@
 // Cron principal (1/min): expira reservas, abre/fecha listas, despacha a fila de mensagens.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { Asaas } from "@/lib/asaas";
 import { dispatchPending, enqueueListOpened } from "@/lib/messaging";
+import { processExpirations, processPromotions, type ExpiredRow } from "@/lib/waitlist";
 
 export const maxDuration = 60;
 
@@ -13,20 +13,23 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const report: Record<string, unknown> = {};
 
-  // 1. expirar reservas + cancelar cobranças órfãs
+  // 1. expirar reservas: cancela cobranças, avisa quem perdeu a vez
+  //    e dispara a cascata (Pix + avisos) para quem subiu da fila
   const { data: expired } = await db.rpc("fn_expire_reservations");
   report.expired = expired;
-  if (expired?.expired?.length) {
-    const { data: parts } = await db
-      .from("game_participants").select("charge_id").in("id", expired.expired);
-    const chargeIds = (parts ?? []).map((r) => r.charge_id).filter(Boolean);
-    if (chargeIds.length) {
-      const { data: charges } = await db
-        .from("charges").select("id, asaas_payment_id").in("id", chargeIds).eq("status", "pending");
-      for (const c of charges ?? []) {
-        if (c.asaas_payment_id) await Asaas.cancelPayment(c.asaas_payment_id).catch(() => {});
-        await db.from("charges").update({ status: "expired" }).eq("id", c.id);
-      }
+  const expiredRows = (expired?.expired ?? []) as ExpiredRow[];
+  await processExpirations(expiredRows).catch((e) => console.error("[waitlist] expiração:", e));
+  const promotedIds = (expired?.promoted ?? []) as string[];
+  if (promotedIds.length) {
+    // agrupa por jogo para gerar Pix e anúncios corretos
+    const { data: promotedParts } = await db
+      .from("game_participants").select("id, game_id").in("id", promotedIds);
+    const byGame = new Map<string, string[]>();
+    for (const p of promotedParts ?? []) {
+      byGame.set(p.game_id, [...(byGame.get(p.game_id) ?? []), p.id]);
+    }
+    for (const [gameId, ids] of byGame) {
+      await processPromotions(gameId, ids).catch((e) => console.error("[waitlist] promoção:", e));
     }
   }
 

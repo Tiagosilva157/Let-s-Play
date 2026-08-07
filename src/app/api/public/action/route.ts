@@ -6,6 +6,7 @@ import { getSessionPlayer } from "@/lib/session";
 import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer, normalizeCpfCnpj, MissingCustomerDataError } from "@/lib/asaas-customer";
 import { enqueueListUpdate, sendPixToPlayer } from "@/lib/messaging";
+import { processPromotions } from "@/lib/waitlist";
 
 const Body = z.object({
   gameId: z.string().uuid(),
@@ -146,7 +147,13 @@ export async function POST(req: NextRequest) {
       entity: "game_participants", entity_id: gameId,
       after: result as unknown as Record<string, unknown>,
     });
-    if (action !== "reserve") await enqueueListUpdate(gameId).catch((e) => console.error("[whatsapp]", e));
+    // desistência/recusa pode ter promovido alguém da fila → Pix + avisos
+    const promoted = (result.promoted ?? []) as string[];
+    if (promoted.length) {
+      await processPromotions(gameId, promoted).catch((e) => console.error("[waitlist]", e));
+    } else if (action !== "reserve") {
+      await enqueueListUpdate(gameId).catch((e) => console.error("[whatsapp]", e));
+    }
   }
 
   return NextResponse.json(result ?? { ok: false, error: "unknown" });
