@@ -99,7 +99,8 @@ export const MANUAL: ManualSection[] = [
       },
       { type: "steps", items: [
         "Para cadastrar um mensalista, abra a turma e clique em Adicionar, ou vá em Jogadores, crie o jogador e marque a opção Mensalista escolhendo as turmas.",
-        "Informe o valor da mensalidade e o dia do vencimento (o padrão é dia 10).",
+        "Preencha nome, WhatsApp, CPF e e-mail — os dois últimos são obrigatórios para conseguir cobrar.",
+        "Informe o valor da mensalidade e o dia do vencimento (o padrão é dia 10). Deixando o valor em branco, vale o valor da turma.",
         "Quando quiser começar a cobrar, clique em Cobrar mensalidade ao lado do nome dele dentro da turma.",
       ]},
       {
@@ -133,7 +134,7 @@ export const MANUAL: ManualSection[] = [
         text: "Dentro do jogo você vê os confirmados, os mensalistas que ainda não responderam, quem está aguardando Pix e a lista de espera. Também pode confirmar ou remover alguém na mão — útil quando o jogador paga em dinheiro na quadra.",
       },
       { type: "list", items: [
-        "Abrir lista agora: adianta a abertura sem esperar o horário programado.",
+        "Abrir lista agora: adianta a abertura sem esperar o horário programado — e já anuncia no grupo com data, local, vagas e o link.",
         "Fechar lista: encerra as confirmações antes do prazo.",
         "Enviar lista ao grupo: manda a lista atualizada no WhatsApp na hora.",
         "Cancelar jogo: encerra a partida e avisa o grupo automaticamente.",
@@ -159,8 +160,9 @@ export const MANUAL: ManualSection[] = [
         "Ele informa o número do WhatsApp e recebe um código de seis dígitos por mensagem.",
         "Digitando o código, ele entra. Se for a primeira vez, informa o nome.",
         "Mensalista escolhe entre Vou jogar e Não vou este dia.",
-        "Avulso clica em Participar, recebe o QR Code do Pix e tem 15 minutos para pagar.",
-        "Assim que o pagamento cai, a vaga é confirmada sozinha e a lista atualiza.",
+        "Avulso clica em Participar e, na primeira vez, informa CPF e e-mail (exigência do banco para emitir o Pix).",
+        "O QR Code aparece na tela e o código copia e cola chega no WhatsApp dele. São 15 minutos para pagar.",
+        "Assim que o pagamento cai, a vaga é confirmada sozinha, o jogador é avisado e a lista do grupo é atualizada.",
       ]},
       {
         type: "p",
@@ -183,8 +185,16 @@ export const MANUAL: ManualSection[] = [
         text: "Os pagamentos passam pelo Asaas. Quando alguém paga, o Asaas avisa o sistema na hora e a vaga é confirmada sozinha — você não precisa conferir extrato nem confirmar nada manualmente.",
       },
       {
+        type: "warn",
+        text: "Todo jogador precisa ter CPF e e-mail no cadastro. O banco não emite nenhuma cobrança sem CPF, e o e-mail é o que permite o envio automático dos avisos de vencimento. Na tela de Jogadores, quem está sem CPF aparece com a marca “Sem CPF”.",
+      },
+      {
         type: "p",
-        text: "No avulso, funciona assim: ao pedir a vaga, ela fica reservada por 15 minutos enquanto o Pix é gerado. Se ele pagar, vira confirmado. Se não pagar nesse tempo, a reserva cai, a cobrança é cancelada e a vaga volta para quem estiver esperando.",
+        text: "No avulso funciona assim: ao pedir a vaga, o sistema pede o CPF e o e-mail dele (só na primeira vez) e reserva a vaga por 15 minutos enquanto o Pix é gerado. Se pagar, vira confirmado. Se não pagar nesse tempo, a reserva cai, a cobrança é cancelada e a vaga volta para quem estiver esperando.",
+      },
+      {
+        type: "p",
+        text: "Além de aparecer na tela, o Pix é enviado no WhatsApp do jogador em duas mensagens: uma com as instruções e o valor, e outra contendo apenas o código copia e cola, para ele conseguir copiar sem sobrar nada junto. Quando o pagamento cai, ele recebe também a confirmação de que a vaga está garantida.",
       },
       {
         type: "p",
@@ -211,11 +221,15 @@ export const MANUAL: ManualSection[] = [
     blocks: [
       {
         type: "p",
-        text: "Cada turma pode ter um grupo de WhatsApp vinculado. O sistema envia a lista atualizada sempre que algo muda: alguém confirma, alguém desiste, um avulso paga, a lista enche ou o jogo é cancelado.",
+        text: "Todas as mensagens do sistema saem pelo WhatsApp: as do grupo e também as individuais. Cada turma tem seu próprio grupo vinculado.",
       },
+      { type: "list", items: [
+        "No grupo: quando a lista abre, quando alguém confirma ou desiste, quando um avulso paga, quando a lista enche e quando o jogo é cancelado.",
+        "No particular do jogador: o código de acesso ao link, o Pix do avulso e a confirmação de que o pagamento caiu.",
+      ]},
       {
         type: "p",
-        text: "Para vincular, você precisa do ID do grupo, que tem o formato de um número longo terminado em @g.us. Ele é colado no campo do grupo dentro da configuração da turma.",
+        text: "Para vincular, você precisa do ID do grupo, que tem o formato de um número longo terminado em @g.us. Ele é colado no campo do grupo dentro da configuração da turma. O sistema recusa formatos diferentes desse para evitar mensagens perdidas.",
       },
       { type: "fields", items: [
         { label: "A cada alteração", text: "Manda mensagem sempre que algo muda. Fica atualizado ao extremo, mas pode gerar bastante mensagem em dia movimentado." },
@@ -263,7 +277,7 @@ export const MANUAL: ManualSection[] = [
       ]},
       {
         type: "tip",
-        text: "Cada administrador pode trocar a própria senha pela tela de Administradores. O Principal pode trocar a senha de qualquer um.",
+        text: "Cada administrador pode trocar a própria senha pela tela de Administradores. O Principal pode trocar a senha de qualquer um. Para encerrar a sessão, use o botão Sair no canto superior direito do painel.",
       },
       {
         type: "warn",
@@ -293,6 +307,10 @@ export const MANUAL: ManualSection[] = [
       ]},
       {
         type: "warn",
+        text: "Atenção ao colar: os campos ficam ocultos por segurança, então um texto digitado por engano passa despercebido. Sempre confirme com os botões de teste depois de salvar.",
+      },
+      {
+        type: "warn",
         text: "Ao trocar para Produção, o webhook do Asaas precisa ser registrado novamente no ambiente novo. Avise o responsável técnico nessa hora.",
       },
     ],
@@ -307,6 +325,8 @@ export const MANUAL: ManualSection[] = [
         { label: "O jogador não recebeu o código", text: "Confira se o número está com DDD e se o token do GP Connect está válido em Configurações, usando o teste de mensagem." },
         { label: "A lista não chegou no grupo", text: "Verifique se o ID do grupo está no formato 1203...@g.us, se o modo de envio não está em Somente manual e se o token do WhatsApp está correto em Configurações. Avisos de falha aparecem na tela inicial." },
         { label: "O Pix não confirmou a vaga", text: "Veja em Financeiro se a cobrança consta como paga. O sistema também confere sozinho de tempos em tempos e corrige diferenças." },
+        { label: "O jogador não recebeu o Pix no WhatsApp", text: "Confira se o número dele está com DDD e se o token do WhatsApp está válido em Configurações. O QR Code continua disponível na tela do link público mesmo se a mensagem falhar." },
+        { label: "O código Pix veio quebrado", text: "O código é enviado sozinho, em uma mensagem separada, justamente para poder ser copiado inteiro. Oriente o jogador a segurar essa mensagem e escolher Copiar — não selecionar o texto com o dedo." },
         { label: "Não consigo marcar alguém como mensalista", text: "Cadastre uma turma primeiro. Mensalista sempre pertence a uma turma." },
         { label: "A cobrança não foi criada", text: "O banco exige CPF e e-mail do jogador para emitir qualquer cobrança. Abra o cadastro do jogador e preencha esses campos — quem estiver sem CPF aparece marcado na lista de Jogadores." },
         { label: "A lista fechou antes da hora", text: "Revise o campo Confirmar até nas configurações da turma. Ele conta horas antes do jogo." },
