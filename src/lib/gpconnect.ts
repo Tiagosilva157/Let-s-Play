@@ -51,6 +51,16 @@ export function isGroupId(id: string) {
   return /^\d{10,}@g\.us$/.test(id.trim());
 }
 
+/**
+ * Nome da conexão (número do WhatsApp) que a GP Connect usou para enviar.
+ * Serve para conferir se o token configurado é o da conexão certa — um token
+ * errado não dá erro, apenas envia por outro número.
+ */
+export function connectionNameFrom(response: unknown): string | null {
+  const r = response as { retorno?: { ticket?: { whatsapp?: { name?: string; status?: string } } } };
+  return r?.retorno?.ticket?.whatsapp?.name ?? null;
+}
+
 export const GpConnect = {
   /** Mensagem de texto em grupo do WhatsApp. */
   sendGroupMessage: (groupId: string, message: string) => {

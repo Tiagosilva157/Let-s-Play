@@ -77,6 +77,11 @@ export default function SettingsForm({ current, meIsOwner }: { current: Current;
         </Field>
 
         <h2 className="pt-2 font-bold">💬 GP Connect (WhatsApp)</h2>
+        <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-xs text-[var(--warn)]">
+          O token define <b>por qual número</b> as mensagens saem. Um token de outra conexão
+          não dá erro — apenas envia pelo número errado. Depois de salvar, use o teste abaixo:
+          ele mostra o nome da conexão utilizada.
+        </p>
         <Field label={`Token ${current.gpconnect_token ? `(atual: ${current.gpconnect_token})` : "(não configurado)"}`}>
           <input name="gpconnect_token" className="input" type="password" placeholder="Cole o novo token para substituir" autoComplete="off" />
         </Field>
