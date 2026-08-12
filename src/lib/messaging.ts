@@ -35,7 +35,10 @@ async function loadGame(gameId: string) {
 }
 
 export function publicLink(slug: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+  // extrai apenas a URL — protege contra valores colados com o nome da
+  // variável junto (ex.: "NEXT_PUBLIC_APP_URL=https://...")
+  const raw = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const base = (raw.match(/https?:\/\/[^\s"']+/)?.[0] ?? "").replace(/\/+$/, "");
   return base ? `${base}/j/${slug}` : "";
 }
 
@@ -132,21 +135,11 @@ function weekdayName(d: string) {
   return new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" });
 }
 
-export async function buildListMessage(gameId: string): Promise<{ body: string; team: TeamInfo } | null> {
-  const built = await buildRoster(gameId);
-  if (!built) return null;
-  const { roster: r, game: g, team: t } = built;
-  const link = publicLink(t.slug);
-
-  const lines: string[] = [
-    `🏐 *${t.name}* | ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`,
-    `⏰ Horário: ${String(g.time).slice(0, 5)}`,
-    `📍 Local: ${g.address}`,
-    ``,
-    `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
-    ``,
-    `*Mensalistas:* (${r.membersHolding} de ${r.members.length} na lista)`,
-  ];
+/** Blocos da lista (Mensalistas / Não mensalistas / espera / rodapé) — usados
+ *  tanto na mensagem de abertura quanto nas atualizações, para o grupo ver
+ *  sempre a mesma estrutura. */
+function rosterLines(r: Roster): string[] {
+  const lines: string[] = [`*Mensalistas:* (${r.membersHolding} de ${r.members.length} na lista)`];
 
   if (r.members.length === 0) {
     lines.push(`_nenhum mensalista cadastrado nesta turma_`);
@@ -176,6 +169,25 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
       : `🔴 *Lista completa — sem vagas para não mensalistas*`,
     `_Cada mensalista que avisar que não vem libera mais uma vaga._`,
   );
+
+  return lines;
+}
+
+export async function buildListMessage(gameId: string): Promise<{ body: string; team: TeamInfo } | null> {
+  const built = await buildRoster(gameId);
+  if (!built) return null;
+  const { roster: r, game: g, team: t } = built;
+  const link = publicLink(t.slug);
+
+  const lines: string[] = [
+    `🏐 *${t.name}* | ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`,
+    `⏰ Horário: ${String(g.time).slice(0, 5)}`,
+    `📍 Local: ${g.address}`,
+    ``,
+    `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
+    ``,
+    ...rosterLines(r),
+  ];
 
   if (link) lines.push(``, `👉 Confirme sua presença: ${link}`);
 
@@ -242,15 +254,16 @@ export async function enqueueListOpened(gameId: string) {
   const prazo = new Date(g.confirm_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const lines = [
     `🏐 *LISTA ABERTA — ${t.name}*`,
-    `📅 ${fmtDate(g.date)} às ${String(g.time).slice(0, 5)}`,
-    `📍 ${g.address}`,
+    `📅 ${weekdayName(g.date)}, ${fmtDateFull(g.date)} às ${String(g.time).slice(0, 5)}`,
+    `📍 Local: ${g.address}`,
     ``,
-    `👥 *${r.capacity} vagas no total*`,
-    `• ${r.members.length} ${r.members.length === 1 ? "mensalista com vaga garantida" : "mensalistas com vaga garantida"}`,
-    `• ${r.dropinSlots} ${r.dropinSlots === 1 ? "vaga para avulso" : "vagas para avulsos"}`,
+    `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
+    `👥 ${r.capacity} vagas no total`,
     ``,
-    `*Mensalistas:* confirmem se vão jogar até ${prazo}. Quem avisar que não vem libera a vaga para um avulso.`,
-    `*Avulsos:* garantam a vaga pagando o Pix pelo link — a vaga só é confirmada após o pagamento.`,
+    ...rosterLines(r),
+    ``,
+    `*Mensalistas:* confirmem se vão jogar até ${prazo}. Quem avisar que não vem libera a vaga.`,
+    `*Não mensalistas:* garantam a vaga pagando o Pix pelo link — a vaga só é confirmada após o pagamento.`,
   ];
   if (link) lines.push(``, `👉 ${link}`);
   const body = lines.join("\n");
