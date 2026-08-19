@@ -38,11 +38,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "wrong_code" }, { status: 400 });
   }
 
-  await db.from("otp_codes").update({ consumed_at: new Date().toISOString() }).eq("id", otp.id);
-
   // busca ou cria jogador
   let { data: player } = await db.from("players").select("id, name, active").eq("phone", phone).maybeSingle();
   if (!player) {
+    // primeira vez: pedimos o nome SEM consumir o código — ele será
+    // verificado de novo na próxima chamada, já com o nome preenchido
     if (!parsed.data.name) return NextResponse.json({ ok: true, needs_name: true });
     const { data: created, error } = await db
       .from("players")
@@ -53,6 +53,9 @@ export async function POST(req: NextRequest) {
     player = created;
   }
   if (!player.active) return NextResponse.json({ error: "player_inactive" }, { status: 403 });
+
+  // consome o código somente agora, com o acesso de fato concluído
+  await db.from("otp_codes").update({ consumed_at: new Date().toISOString() }).eq("id", otp.id);
 
   await createPlayerSession(player.id, req.headers.get("user-agent") ?? undefined);
   return NextResponse.json({ ok: true, player: { id: player.id, name: player.name } });
