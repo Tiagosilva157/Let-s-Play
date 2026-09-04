@@ -171,16 +171,45 @@ export async function cancelSubscription(memberId: string) {
   return { ok: true };
 }
 
-/** Torna mensalistas vários jogadores já cadastrados (marcados na lista). */
-export async function addMembersFromPlayers(teamId: string, playerIds: string[]) {
+/**
+ * Sincroniza os mensalistas da turma com a lista marcada:
+ * marcados viram/continuam mensalistas; desmarcados deixam de ser.
+ * Quem sai com assinatura ativa tem a recorrência cancelada no Asaas
+ * (senão continuaria sendo cobrado todo mês).
+ */
+export async function syncTeamMembers(teamId: string, checkedPlayerIds: string[]) {
   const admin = await requireAdmin();
-  if (!Array.isArray(playerIds) || playerIds.length === 0) return { error: "Marque ao menos um jogador." };
+  if (!Array.isArray(checkedPlayerIds)) return { error: "Seleção inválida." };
+  const checked = new Set(checkedPlayerIds.slice(0, 300));
 
   const db = supabaseAdmin();
-  let added = 0;
-  for (const playerId of playerIds.slice(0, 100)) {
-    const { data: existing } = await db.from("team_members")
-      .select("id, status").eq("team_id", teamId).eq("player_id", playerId).maybeSingle();
+  const { data: current } = await db.from("team_members")
+    .select("id, player_id, status, asaas_subscription_id, subscription_status")
+    .eq("team_id", teamId);
+
+  let added = 0, removed = 0, subsCanceled = 0;
+
+  // desmarcados que hoje são ativos → saem
+  for (const m of current ?? []) {
+    if (m.status === "active" && !checked.has(m.player_id)) {
+      if (m.asaas_subscription_id && ["active", "overdue"].includes(m.subscription_status)) {
+        const { Asaas } = await import("@/lib/asaas");
+        const okCancel = await Asaas.cancelSubscription(m.asaas_subscription_id).then(() => true).catch(() => false);
+        if (!okCancel) {
+          return { error: "Não foi possível cancelar a assinatura de um dos removidos no Asaas. Nada foi alterado — tente novamente." };
+        }
+        await db.from("team_members").update({ asaas_subscription_id: null, subscription_status: "canceled" }).eq("id", m.id);
+        subsCanceled++;
+      }
+      await db.from("team_members").update({ status: "inactive" }).eq("id", m.id);
+      removed++;
+    }
+  }
+
+  // marcados que ainda não são ativos → entram (reativa ou cria)
+  const byPlayer = new Map((current ?? []).map((m) => [m.player_id, m]));
+  for (const playerId of checked) {
+    const existing = byPlayer.get(playerId);
     if (existing) {
       if (existing.status !== "active") {
         await db.from("team_members").update({ status: "active" }).eq("id", existing.id);
@@ -191,9 +220,10 @@ export async function addMembersFromPlayers(teamId: string, playerIds: string[])
       if (!error) added++;
     }
   }
-  await auditAdmin(admin.id, "add_members_bulk", "team_members", teamId, { count: added });
+
+  await auditAdmin(admin.id, "sync_members", "team_members", teamId, { added, removed, subsCanceled });
   revalidatePath("/admin/turmas");
-  return { ok: true, added };
+  return { ok: true, added, removed, subsCanceled };
 }
 
 export async function removeMember(memberId: string) {

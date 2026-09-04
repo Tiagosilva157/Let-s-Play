@@ -31,21 +31,20 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
     subscription: m.subscription_status,
   }));
 
-  // jogadores já cadastrados que ainda não são mensalistas desta turma
+  // todos os jogadores ativos — os mensalistas atuais chegam pré-marcados
   const memberPlayerIds = new Set((members ?? []).map((m) => (m.players as unknown as { id: string }).id));
   const { data: allPlayers } = await db
     .from("players")
     .select("id, name, phone, cpf_cnpj")
     .eq("active", true)
     .order("name");
-  const availablePlayers = (allPlayers ?? [])
-    .filter((p) => !memberPlayerIds.has(p.id))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      phone: formatPhoneBR(p.phone),
-      hasCpf: !!p.cpf_cnpj,
-    }));
+  const availablePlayers = (allPlayers ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    phone: formatPhoneBR(p.phone),
+    hasCpf: !!p.cpf_cnpj,
+    isMember: memberPlayerIds.has(p.id),
+  }));
 
   return (
     <div className="space-y-6">

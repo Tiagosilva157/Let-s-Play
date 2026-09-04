@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addMember, addMembersFromPlayers, removeMember, activateSubscription, cancelSubscription } from "../actions";
+import { addMember, syncTeamMembers, removeMember, activateSubscription, cancelSubscription } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Member { id: string; name: string; phone: string; fee: number; dueDay: number; subscription: string }
-export interface AvailablePlayer { id: string; name: string; phone: string; hasCpf: boolean }
+export interface AvailablePlayer { id: string; name: string; phone: string; hasCpf: boolean; isMember: boolean }
 
 const SUB_LABEL: Record<string, { label: string; cls: string }> = {
   none: { label: "Sem assinatura", cls: "badge-neutral" },
@@ -28,17 +28,36 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
 
+  const memberIds = availablePlayers.filter((p) => p.isMember).map((p) => p.id);
   const filteredAvailable = availablePlayers.filter((p) =>
     p.name.toLowerCase().includes(pickerSearch.toLowerCase()) || p.phone.includes(pickerSearch)
   );
 
-  function addSelected() {
+  function openPicker() {
+    setSelected(memberIds); // mensalistas atuais já chegam marcados
+    setPickerSearch("");
+    setShowPicker(true);
+    setShowForm(false);
+    setError(""); setOk("");
+  }
+
+  const toAdd = selected.filter((id) => !memberIds.includes(id)).length;
+  const toRemove = memberIds.filter((id) => !selected.includes(id)).length;
+
+  function saveSelection() {
+    if (toRemove > 0 && !confirm(
+      `${toRemove} mensalista(s) serão REMOVIDOS da turma` +
+      ` (assinaturas ativas deles serão canceladas no Asaas). Confirmar?`
+    )) return;
     startTransition(async () => {
-      const res = await addMembersFromPlayers(teamId, selected);
+      const res = await syncTeamMembers(teamId, selected);
       if (res?.error) { setError(res.error); return; }
       setError("");
-      setOk(`${res.added} jogador(es) adicionados como mensalistas.`);
-      setSelected([]);
+      const parts = [];
+      if (res.added) parts.push(`${res.added} adicionado(s)`);
+      if (res.removed) parts.push(`${res.removed} removido(s)`);
+      if (res.subsCanceled) parts.push(`${res.subsCanceled} assinatura(s) cancelada(s)`);
+      setOk(parts.length ? `Mensalistas atualizados: ${parts.join(", ")}.` : "Nenhuma mudança para salvar.");
       setShowPicker(false);
       router.refresh();
     });
@@ -68,8 +87,8 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
         <h2 className="font-bold">Mensalistas ({members.length})</h2>
         <div className="flex flex-wrap gap-2">
           <button className="btn btn-primary btn-sm"
-            onClick={() => { setShowPicker(!showPicker); setShowForm(false); setError(""); setOk(""); }}>
-            ☑ Escolher da lista
+            onClick={() => (showPicker ? setShowPicker(false) : openPicker())}>
+            ☑ Gerenciar pela lista
           </button>
           <button className="btn btn-outline btn-sm"
             onClick={() => { setShowForm(!showForm); setShowPicker(false); setError(""); setOk(""); }}>
@@ -88,9 +107,11 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
 
       {showPicker && (
         <div className="mb-4 space-y-3 rounded-xl bg-[var(--bg)] p-4">
-          <p className="text-sm font-medium">Marque os jogadores que passam a ser mensalistas desta turma:</p>
+          <p className="text-sm font-medium">
+            Marque quem é mensalista desta turma — desmarcar remove. Os atuais já vêm marcados.
+          </p>
           {availablePlayers.length === 0 ? (
-            <p className="text-sm text-[var(--ink-soft)]">Todos os jogadores cadastrados já são mensalistas desta turma.</p>
+            <p className="text-sm text-[var(--ink-soft)]">Nenhum jogador cadastrado ainda.</p>
           ) : (
             <>
               <input className="input" placeholder="🔍 Buscar jogador" value={pickerSearch}
@@ -105,17 +126,24 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
                       <span className="block truncate text-sm font-medium">{p.name}</span>
                       <span className="block text-xs text-[var(--ink-soft)]">{p.phone}</span>
                     </span>
+                    {p.isMember && <span className="badge badge-neutral shrink-0">mensalista hoje</span>}
                     {!p.hasCpf && <span className="badge badge-warn shrink-0">Sem CPF</span>}
                   </label>
                 ))}
                 {filteredAvailable.length === 0 && <p className="px-2 text-sm text-[var(--ink-soft)]">Nenhum jogador encontrado.</p>}
               </div>
               <p className="text-xs text-[var(--ink-soft)]">
-                Eles entram com o valor padrão da turma e vencimento dia 10 — dá para ajustar depois, antes de cobrar.
+                Novos entram com o valor padrão da turma e vencimento dia 10. Removidos com assinatura ativa têm a cobrança mensal cancelada no Asaas.
               </p>
-              <button className="btn btn-primary btn-sm" disabled={pending || selected.length === 0} onClick={addSelected}>
-                {pending ? <><Spinner /> Adicionando...</> : `Adicionar ${selected.length || ""} como mensalista${selected.length === 1 ? "" : "s"}`}
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <button className="btn btn-primary btn-sm" disabled={pending || (toAdd === 0 && toRemove === 0)} onClick={saveSelection}>
+                  {pending ? <><Spinner /> Salvando...</> : "Salvar mensalistas"}
+                </button>
+                <span className="text-xs text-[var(--ink-soft)]">
+                  {toAdd > 0 && `+${toAdd} novo(s)`} {toAdd > 0 && toRemove > 0 && "· "} {toRemove > 0 && `−${toRemove} removido(s)`}
+                  {toAdd === 0 && toRemove === 0 && "Nenhuma mudança"}
+                </span>
+              </div>
             </>
           )}
         </div>
