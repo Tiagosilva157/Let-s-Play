@@ -10,11 +10,34 @@ const ALLOWED_KEYS = new Set([
   "gpconnect_token", "gpconnect_base_url",
 ]);
 
+/** Chaves de teste do Asaas carregam o prefixo de homologação. */
+function isSandboxKey(key: string) {
+  return key.startsWith("$aact_hmlg");
+}
+
 export async function saveSettings(formData: FormData) {
   const admin = await requireAdmin();
   if (admin.role !== "owner") return { error: "Apenas o administrador principal pode alterar as integrações." };
 
   const db = supabaseAdmin();
+
+  // valida o par chave × ambiente ANTES de salvar (o descasamento faz o
+  // Asaas responder 401 em tudo e nenhuma cobrança sai)
+  const newKey = String(formData.get("asaas_api_key") ?? "").trim();
+  const newEnv = String(formData.get("asaas_env") ?? "").trim();
+  if (newEnv === "production" || newKey) {
+    const { data: cur } = await db.from("system_settings").select("key, value").in("key", ["asaas_api_key", "asaas_env"]);
+    const curMap = Object.fromEntries((cur ?? []).map((r) => [r.key, String(r.value)]));
+    const effectiveKey = newKey || curMap.asaas_api_key || "";
+    const effectiveEnv = ["sandbox", "production"].includes(newEnv) ? newEnv : (curMap.asaas_env || "sandbox");
+    if (effectiveEnv === "production" && isSandboxKey(effectiveKey)) {
+      return { error: "A chave salva é de TESTES (começa com $aact_hmlg) e não funciona no ambiente Produção. Cole a chave de produção do Asaas (asaas.com → Integrações → Chave de API) ou volte o ambiente para Sandbox." };
+    }
+    if (effectiveEnv === "sandbox" && effectiveKey && !isSandboxKey(effectiveKey)) {
+      return { error: "A chave salva é de PRODUÇÃO e não funciona no ambiente Sandbox. Troque o ambiente para Produção ou cole a chave do sandbox." };
+    }
+  }
+
   const saved: string[] = [];
   for (const [key, raw] of formData.entries()) {
     if (!ALLOWED_KEYS.has(key)) continue;

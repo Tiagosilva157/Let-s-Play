@@ -46,9 +46,13 @@ export default function MemberManager({ teamId, members }: { teamId: string; mem
         <button className="btn btn-primary btn-sm" onClick={() => setShowForm(!showForm)}>+ Adicionar</button>
       </div>
 
+      {/* erro sempre visível — inclusive o do botão "Cobrar mensalidade" */}
+      {error && (
+        <p className="mb-3 rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p>
+      )}
+
       {showForm && (
         <form action={submit} className="mb-4 space-y-3 rounded-xl bg-[var(--bg)] p-4">
-          {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
           <input name="player_name" className="input" placeholder="Nome do jogador" required />
           <input name="player_phone" className="input" type="tel" placeholder="WhatsApp: (11) 99999-9999" required />
           <div className="grid gap-3 sm:grid-cols-2">
