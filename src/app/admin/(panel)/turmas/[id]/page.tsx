@@ -31,6 +31,22 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
     subscription: m.subscription_status,
   }));
 
+  // jogadores já cadastrados que ainda não são mensalistas desta turma
+  const memberPlayerIds = new Set((members ?? []).map((m) => (m.players as unknown as { id: string }).id));
+  const { data: allPlayers } = await db
+    .from("players")
+    .select("id, name, phone, cpf_cnpj")
+    .eq("active", true)
+    .order("name");
+  const availablePlayers = (allPlayers ?? [])
+    .filter((p) => !memberPlayerIds.has(p.id))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      phone: formatPhoneBR(p.phone),
+      hasCpf: !!p.cpf_cnpj,
+    }));
+
   return (
     <div className="space-y-6">
       <div>
@@ -39,7 +55,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
           Link público: <a className="text-[var(--brand)] underline" href={`/j/${team.slug}`} target="_blank">/j/{team.slug}</a>
         </p>
       </div>
-      <MemberManager teamId={team.id} members={memberList} />
+      <MemberManager teamId={team.id} members={memberList} availablePlayers={availablePlayers} />
       <details className="card p-4">
         <summary className="cursor-pointer font-semibold">Configurações da turma</summary>
         <div className="pt-4">

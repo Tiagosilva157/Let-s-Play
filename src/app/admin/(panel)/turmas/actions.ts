@@ -171,6 +171,31 @@ export async function cancelSubscription(memberId: string) {
   return { ok: true };
 }
 
+/** Torna mensalistas vários jogadores já cadastrados (marcados na lista). */
+export async function addMembersFromPlayers(teamId: string, playerIds: string[]) {
+  const admin = await requireAdmin();
+  if (!Array.isArray(playerIds) || playerIds.length === 0) return { error: "Marque ao menos um jogador." };
+
+  const db = supabaseAdmin();
+  let added = 0;
+  for (const playerId of playerIds.slice(0, 100)) {
+    const { data: existing } = await db.from("team_members")
+      .select("id, status").eq("team_id", teamId).eq("player_id", playerId).maybeSingle();
+    if (existing) {
+      if (existing.status !== "active") {
+        await db.from("team_members").update({ status: "active" }).eq("id", existing.id);
+        added++;
+      }
+    } else {
+      const { error } = await db.from("team_members").insert({ team_id: teamId, player_id: playerId });
+      if (!error) added++;
+    }
+  }
+  await auditAdmin(admin.id, "add_members_bulk", "team_members", teamId, { count: added });
+  revalidatePath("/admin/turmas");
+  return { ok: true, added };
+}
+
 export async function removeMember(memberId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
