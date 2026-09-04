@@ -167,6 +167,42 @@ export async function resetGame(gameId: string) {
   return { ok: true, removed: removedCount ?? 0, chargesCanceled: canceled, paidKept };
 }
 
+/**
+ * Envia a divisão de times ao grupo — somente nomes, nunca as estrelas.
+ * Os nomes são recarregados do banco a partir dos ids (fonte confiável).
+ */
+export async function sendTeamsToGroup(gameId: string, teamsPlayerIds: string[][]) {
+  const admin = await requireAdmin();
+  if (!Array.isArray(teamsPlayerIds) || teamsPlayerIds.length === 0) return { error: "Divida os times primeiro." };
+
+  const db = supabaseAdmin();
+  const { data: game } = await db
+    .from("games")
+    .select("id, date, teams(id, name, whatsapp_group_id)")
+    .eq("id", gameId).maybeSingle();
+  if (!game) return { error: "Jogo não encontrado." };
+  const team = game.teams as unknown as { id: string; name: string; whatsapp_group_id: string | null };
+  if (!team.whatsapp_group_id) return { error: "Turma sem grupo do WhatsApp configurado." };
+
+  const allIds = teamsPlayerIds.flat().slice(0, 200);
+  const { data: players } = await db.from("players").select("id, name").in("id", allIds);
+  const nameById = new Map((players ?? []).map((p) => [p.id, p.name]));
+
+  const { teamsMessage } = await import("@/lib/balance");
+  const teamsWithNames = teamsPlayerIds.map((ids) => ({
+    players: ids.map((id) => ({ name: nameById.get(id) ?? "?" })).filter((p) => p.name !== "?"),
+  }));
+  const body = teamsMessage(team.name, game.date, teamsWithNames);
+
+  try {
+    await enqueueGroupMessage(team.id, team.whatsapp_group_id, body, gameId);
+  } catch (e) {
+    return { error: "Falha ao enviar: " + String(e).slice(0, 160) };
+  }
+  await auditAdmin(admin.id, "send_teams", "games", gameId, { teams: teamsPlayerIds.map((t) => t.length) });
+  return { ok: true };
+}
+
 export async function resolvePendingReview(participantId: string, decision: "credit" | "refund" | "keep") {
   const admin = await requireAdmin();
   const db = supabaseAdmin();

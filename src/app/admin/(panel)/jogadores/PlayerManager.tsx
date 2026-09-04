@@ -7,7 +7,7 @@ import Spinner from "@/components/Spinner";
 
 export interface PlayerRow {
   id: string; name: string; phone: string; phoneRaw: string; notes: string;
-  email: string; cpf: string; cpfRaw: string;
+  email: string; cpf: string; cpfRaw: string; skill: number;
   active: boolean; teams: string[]; teamIds: string[];
 }
 export interface TeamOption { id: string; name: string }
@@ -66,6 +66,8 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
           </div>
           <input name="notes" className="input" placeholder="Observações (opcional)" defaultValue={editing?.notes} />
 
+          <SkillPicker initial={editing?.skill ?? 3} />
+
           <PlayerTypePicker teams={teams} initialTeamIds={editing?.teamIds ?? []} />
           <div className="flex flex-col gap-2 sm:flex-row">
             <button className="btn btn-primary btn-sm" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : "Salvar"}</button>
@@ -83,7 +85,10 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
         {filtered.map((p) => (
           <div key={p.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="font-medium">{p.name}</p>
+              <p className="font-medium">
+                {p.name}{" "}
+                <span className="text-xs text-[#f5a623]" title="Nível técnico (interno)">{"★".repeat(p.skill)}</span>
+              </p>
               <p className="text-sm text-[var(--ink-soft)]">{p.phone}{p.email ? ` · ${p.email}` : ""}{p.cpf ? ` · ${p.cpf}` : ""}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -101,6 +106,36 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
         ))}
         {filtered.length === 0 && <p className="p-4 text-sm text-[var(--ink-soft)]">Nenhum jogador encontrado.</p>}
       </div>
+    </div>
+  );
+}
+
+const SKILL_LABEL: Record<number, string> = {
+  1: "Iniciante",
+  2: "Em desenvolvimento",
+  3: "Intermediário",
+  4: "Acima da média",
+  5: "Experiente / alto nível",
+};
+
+/** Nível técnico interno — usado só pelo balanceamento de times, nunca aparece para os jogadores. */
+function SkillPicker({ initial }: { initial: number }) {
+  const [skill, setSkill] = useState(initial);
+  return (
+    <div className="space-y-1.5 rounded-xl bg-[var(--bg)] p-3">
+      <p className="text-sm font-medium">Nível técnico (interno — para dividir os times)</p>
+      <input type="hidden" name="skill_level" value={skill} />
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} type="button" onClick={() => setSkill(n)}
+            className="p-1 text-2xl leading-none"
+            aria-label={`${n} estrela${n > 1 ? "s" : ""}`}>
+            <span className={n <= skill ? "text-[#f5a623]" : "text-[var(--line)]"}>★</span>
+          </button>
+        ))}
+        <span className="ml-2 text-sm text-[var(--ink-soft)]">{SKILL_LABEL[skill]}</span>
+      </div>
+      <p className="text-xs text-[var(--ink-soft)]">Os jogadores nunca veem essa classificação.</p>
     </div>
   );
 }

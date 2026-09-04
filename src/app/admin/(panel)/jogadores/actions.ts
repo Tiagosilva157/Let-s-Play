@@ -13,6 +13,7 @@ const PlayerSchema = z.object({
   email: z.string().max(120).optional().or(z.literal("")),
   cpf_cnpj: z.string().max(20).optional().or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
+  skill_level: z.coerce.number().int().min(1).max(5).default(3),
 });
 
 /** Normaliza e valida os campos de cobrança; devolve erro amigável. */
@@ -65,6 +66,7 @@ export async function createPlayer(formData: FormData) {
     .from("players")
     .insert({
       name: parsed.data.name.trim(), phone, notes: parsed.data.notes || null,
+      skill_level: parsed.data.skill_level,
       ...billing.values,
     })
     .select("id")
@@ -94,6 +96,7 @@ export async function updatePlayer(playerId: string, formData: FormData) {
     .from("players")
     .update({
       name: parsed.data.name.trim(), phone, notes: parsed.data.notes || null,
+      skill_level: parsed.data.skill_level,
       ...billing.values,
     })
     .eq("id", playerId);

@@ -11,7 +11,7 @@ export default async function PlayersPage() {
   const db = supabaseAdmin();
   const [{ data: players }, { data: teams }] = await Promise.all([
     db.from("players")
-      .select("id, name, phone, email, cpf_cnpj, notes, active, team_members(status, team_id, teams(name))")
+      .select("id, name, phone, email, cpf_cnpj, notes, active, skill_level, team_members(status, team_id, teams(name))")
       .order("name"),
     db.from("teams").select("id, name").eq("status", "active").order("name"),
   ]);
@@ -25,6 +25,7 @@ export default async function PlayersPage() {
     cpf: formatCpfCnpj(p.cpf_cnpj),
     cpfRaw: p.cpf_cnpj ?? "",
     notes: p.notes ?? "",
+    skill: p.skill_level ?? 3,
     active: p.active,
     teams: ((p.team_members as unknown as { status: string; teams: { name: string } }[] | null) ?? [])
       .filter((m) => m.status === "active")

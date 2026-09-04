@@ -27,7 +27,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   pending_review: { label: "Pagou sem vaga — decidir", cls: "badge-danger" },
 };
 
-export default function GameManager({ game, participants }: { game: Game; participants: Participant[] }) {
+export default function GameManager({ game, participants, splitter }: { game: Game; participants: Participant[]; splitter?: React.ReactNode }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState("");
@@ -91,6 +91,8 @@ export default function GameManager({ game, participants }: { game: Game; partic
             }}>Cancelar jogo</button>
         )}
       </div>
+
+      {splitter}
 
       <Section title={`Confirmados (${confirmed.length})`}>
         {confirmed.map((p) => (
