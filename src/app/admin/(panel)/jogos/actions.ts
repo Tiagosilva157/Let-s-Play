@@ -105,6 +105,68 @@ export async function sendListNow(gameId: string) {
   return { ok: true };
 }
 
+/**
+ * Reseta a lista do jogo: remove todas as participações e recomeça do zero.
+ * - Cobranças Pix pendentes são canceladas no Asaas.
+ * - Cobranças já pagas são preservadas no Financeiro e sinalizadas para
+ *   decisão do admin (crédito/estorno) via auditoria.
+ * - Se a lista estiver aberta, os mensalistas voltam como "aguardando resposta".
+ */
+export async function resetGame(gameId: string) {
+  const admin = await requireAdmin();
+  const db = supabaseAdmin();
+
+  const { data: game } = await db.from("games").select("id, status, team_id").eq("id", gameId).maybeSingle();
+  if (!game) return { error: "Jogo não encontrado." };
+
+  // 1. cancela cobranças pendentes deste jogo no Asaas
+  const { data: charges } = await db.from("charges")
+    .select("id, asaas_payment_id, status").eq("game_id", gameId);
+  let canceled = 0, paidKept = 0;
+  for (const c of charges ?? []) {
+    if (c.status === "pending") {
+      if (c.asaas_payment_id) await Asaas.cancelPayment(c.asaas_payment_id).catch(() => {});
+      await db.from("charges").update({ status: "canceled" }).eq("id", c.id);
+      canceled++;
+    } else if (["received", "confirmed"].includes(c.status)) {
+      paidKept++; // fica registrada no Financeiro para decisão de crédito/estorno
+    }
+  }
+
+  // 2. zera as participações
+  const { count: removedCount } = await db.from("game_participants")
+    .select("id", { count: "exact", head: true }).eq("game_id", gameId);
+  await db.from("game_participants").delete().eq("game_id", gameId);
+
+  // 3. lista aberta: mensalistas voltam como convidados
+  if (game.status === "open") {
+    const { data: members } = await db.from("team_members")
+      .select("player_id").eq("team_id", game.team_id).eq("status", "active");
+    for (const m of members ?? []) {
+      await db.from("game_participants").insert({
+        game_id: gameId, player_id: m.player_id, kind: "member", status: "invited", source: "system",
+      });
+    }
+  }
+
+  await auditAdmin(admin.id, "reset_game", "games", gameId, {
+    removed: removedCount ?? 0, chargesCanceled: canceled, paidKept,
+  });
+
+  // 4. avisa o grupo com a lista zerada
+  const built = await buildListMessage(gameId);
+  if (built?.team.whatsapp_group_id) {
+    await enqueueGroupMessage(
+      built.team.id, built.team.whatsapp_group_id,
+      `🔄 *A lista deste jogo foi reiniciada pelo organizador.*\nConfirme sua presença novamente.\n\n${built.body}`,
+      gameId
+    ).catch(() => {});
+  }
+
+  revalidatePath(`/admin/jogos/${gameId}`);
+  return { ok: true, removed: removedCount ?? 0, chargesCanceled: canceled, paidKept };
+}
+
 export async function resolvePendingReview(participantId: string, decision: "credit" | "refund" | "keep") {
   const admin = await requireAdmin();
   const db = supabaseAdmin();

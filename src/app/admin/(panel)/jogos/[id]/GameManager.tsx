@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview } from "../actions";
+import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -69,6 +69,19 @@ export default function GameManager({ game, participants }: { game: Game; partic
         {game.hasWhatsApp && (
           <button className="btn btn-outline btn-sm" disabled={pending}
             onClick={() => run(() => sendListNow(game.id), "Lista enviada ao grupo!")}>{pending ? <Spinner size={14} /> : "📤"} Enviar lista ao grupo</button>
+        )}
+        {game.status !== "canceled" && participants.length > 0 && (
+          <button className="btn btn-danger-soft btn-sm" disabled={pending}
+            onClick={() => {
+              const paid = participants.filter((p) => p.status === "confirmed" && p.kind === "dropin" && ["received", "confirmed"].includes(p.chargeStatus ?? "")).length;
+              const msg = `Resetar a lista deste jogo?\n\n` +
+                `• Todas as ${participants.length} participações serão apagadas\n` +
+                `• Cobranças Pix pendentes serão canceladas\n` +
+                (paid > 0 ? `• ATENÇÃO: ${paid} avulso(s) JÁ PAGARAM — os pagamentos ficam no Financeiro para você dar crédito ou estornar\n` : "") +
+                `• Mensalistas voltam como "aguardando resposta" (se a lista estiver aberta)\n` +
+                `• O grupo será avisado\n\nEssa ação não pode ser desfeita.`;
+              if (confirm(msg)) run(() => resetGame(game.id), "Lista resetada.");
+            }}>🔄 Resetar lista</button>
         )}
         {game.status !== "canceled" && (
           <button className="btn btn-danger-soft btn-sm" disabled={pending}
