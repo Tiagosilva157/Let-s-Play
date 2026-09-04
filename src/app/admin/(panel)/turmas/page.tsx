@@ -9,9 +9,11 @@ const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "
 export default async function TeamsPage() {
   await requireAdmin();
   const db = supabaseAdmin();
+  // conta apenas mensalistas ativos (removidos ficam como histórico)
   const { data: teams } = await db
     .from("teams")
     .select("*, team_members(count)")
+    .eq("team_members.status", "active")
     .order("weekday");
 
   return (

@@ -12,7 +12,7 @@ export default async function Dashboard() {
   const [teams, games, overdue, pendingReview, failedMsgs] = await Promise.all([
     db.from("teams").select("id", { count: "exact", head: true }).eq("status", "active"),
     db.from("games").select("id, date, time, status, teams(name)").gte("date", today).in("status", ["scheduled", "open", "closed"]).order("date").limit(6),
-    db.from("team_members").select("id", { count: "exact", head: true }).eq("subscription_status", "overdue"),
+    db.from("team_members").select("id", { count: "exact", head: true }).eq("subscription_status", "overdue").eq("status", "active"),
     db.from("game_participants").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
     db.from("message_dispatches").select("id", { count: "exact", head: true }).eq("status", "failed"),
   ]);
