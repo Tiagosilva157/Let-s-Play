@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, auditAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { buildListMessage, enqueueListUpdate, enqueueListOpened, enqueueGroupMessage } from "@/lib/messaging";
+import { buildListMessage, enqueueListUpdate, enqueueListOpened, enqueueGroupMessage, sendGroupDirect } from "@/lib/messaging";
 import { Asaas } from "@/lib/asaas";
 
 export async function adminConfirm(gameId: string, playerId: string, kind: "member" | "dropin") {
@@ -92,16 +92,52 @@ export async function toggleList(gameId: string, open: boolean) {
   revalidatePath(`/admin/jogos/${gameId}`);
 }
 
+/**
+ * Restaura um jogo cancelado por engano, voltando ao estado natural:
+ * se a abertura ainda não chegou → agendado; senão → lista aberta
+ * (mensalistas reconvidados e prazos estendidos se necessário).
+ */
+export async function restoreGame(gameId: string) {
+  const admin = await requireAdmin();
+  const db = supabaseAdmin();
+  const { data: g } = await db.from("games").select("id, status, opens_at").eq("id", gameId).maybeSingle();
+  if (!g) return { error: "Jogo não encontrado." };
+  if (g.status !== "canceled") return { error: "Este jogo não está cancelado." };
+
+  if (new Date(g.opens_at) > new Date()) {
+    await db.from("games").update({ status: "scheduled", cancel_reason: null }).eq("id", gameId);
+    await auditAdmin(admin.id, "restore_game", "games", gameId, { to: "scheduled" });
+    revalidatePath(`/admin/jogos/${gameId}`);
+    return { ok: true, restoredTo: "scheduled" };
+  }
+
+  // abertura já passou: volta como agendado e reabre pela rotina normal
+  await db.from("games").update({ status: "scheduled", cancel_reason: null }).eq("id", gameId);
+  await auditAdmin(admin.id, "restore_game", "games", gameId, { to: "open" });
+  await toggleList(gameId, true);
+  return { ok: true, restoredTo: "open" };
+}
+
+/** Salva a divisão de times escolhida, vinculada ao jogo. */
+export async function saveTeamsSplit(gameId: string, teamsPlayerIds: string[][]) {
+  const admin = await requireAdmin();
+  if (!Array.isArray(teamsPlayerIds)) return { error: "Divisão inválida." };
+  const db = supabaseAdmin();
+  const { error } = await db.from("games").update({
+    teams_split: { teams: teamsPlayerIds, saved_at: new Date().toISOString() },
+  }).eq("id", gameId);
+  if (error) return { error: "Erro ao salvar a divisão." };
+  await auditAdmin(admin.id, "save_teams_split", "games", gameId, { sizes: teamsPlayerIds.map((t) => t.length) });
+  return { ok: true };
+}
+
 export async function sendListNow(gameId: string) {
   await requireAdmin();
   const db = supabaseAdmin();
   const built = await buildListMessage(gameId);
-  if (!built?.team.whatsapp_group_id) return { error: "Turma sem grupo do WhatsApp configurado." };
-  try {
-    await enqueueGroupMessage(built.team.id, built.team.whatsapp_group_id, built.body, gameId);
-  } catch (e) {
-    return { error: "Falha ao enviar: " + String(e).slice(0, 160) };
-  }
+  if (!built?.team.whatsapp_group_id) return { error: "Turma sem grupo do WhatsApp configurado. Configure na turma o ID no formato 1203...@g.us." };
+  const sent = await sendGroupDirect(built.team.id, built.team.whatsapp_group_id, built.body, gameId);
+  if (!sent.ok) return { error: "O WhatsApp recusou o envio: " + sent.error };
   return { ok: true };
 }
 
@@ -194,11 +230,8 @@ export async function sendTeamsToGroup(gameId: string, teamsPlayerIds: string[][
   }));
   const body = teamsMessage(team.name, game.date, teamsWithNames);
 
-  try {
-    await enqueueGroupMessage(team.id, team.whatsapp_group_id, body, gameId);
-  } catch (e) {
-    return { error: "Falha ao enviar: " + String(e).slice(0, 160) };
-  }
+  const sent = await sendGroupDirect(team.id, team.whatsapp_group_id, body, gameId);
+  if (!sent.ok) return { error: "O WhatsApp recusou o envio: " + sent.error };
   await auditAdmin(admin.id, "send_teams", "games", gameId, { teams: teamsPlayerIds.map((t) => t.length) });
   return { ok: true };
 }

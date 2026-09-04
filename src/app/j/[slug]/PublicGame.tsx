@@ -64,6 +64,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     send_failed: "Não conseguimos enviar o código. Tente novamente.",
     payment_provider_error: "Erro ao gerar o Pix. Tente novamente.",
     invalid_phone: "Telefone inválido. Use DDD + número.",
+    server_error: "O sistema encontrou um problema ao processar. Tente novamente em instantes.",
   };
 
   async function api(path: string, body: unknown) {
@@ -75,7 +76,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      // resposta sem JSON (erro do servidor/proxy) não é "sem conexão"
+      const data = await res.json().catch(() => ({ error: "server_error" }));
       // não é erro: o sistema precisa de CPF/e-mail para emitir a cobrança
       if (data?.error === "needs_billing_data") return data;
       if (!res.ok || data.error) {
@@ -166,9 +168,19 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
           {error && <p className="rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p>}
 
           {!player && step === "idle" && (
-            <button className="btn btn-primary" onClick={() => setStep("phone")} disabled={closed && game.spots_available <= 0}>
-              Confirmar presença
-            </button>
+            <>
+              {closed && (
+                <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm text-[var(--warn)]">
+                  {game.status === "canceled"
+                    ? "Este jogo foi cancelado."
+                    : "A lista deste jogo está fechada — as confirmações foram encerradas."}
+                  {" "}Se você já estava na lista, entre abaixo para ver sua situação.
+                </p>
+              )}
+              <button className="btn btn-primary" onClick={() => setStep("phone")}>
+                {closed ? "Entrar para ver minha situação" : "Confirmar presença"}
+              </button>
+            </>
           )}
 
           {step === "phone" && (

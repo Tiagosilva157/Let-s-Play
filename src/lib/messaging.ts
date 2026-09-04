@@ -323,6 +323,29 @@ export async function enqueueGroupMessage(teamId: string, groupId: string, body:
 }
 
 /**
+ * Envio SÍNCRONO ao grupo, para ações manuais do admin que precisam de
+ * retorno imediato ("enviado" ou o erro exato). Registra na fila como
+ * sent/failed do mesmo jeito, para o histórico ficar completo.
+ */
+export async function sendGroupDirect(teamId: string, groupId: string, body: string, gameId?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = supabaseAdmin();
+  const { data: row } = await db.from("message_dispatches").insert({
+    team_id: teamId, game_id: gameId ?? null, kind: "group",
+    recipient: groupId, body, status: "sending",
+  }).select("id").single();
+
+  try {
+    await GpConnect.sendGroupMessage(groupId, body);
+    if (row) await db.from("message_dispatches").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", row.id);
+    return { ok: true };
+  } catch (e) {
+    const error = String(e).slice(0, 300);
+    if (row) await db.from("message_dispatches").update({ status: "failed", error }).eq("id", row.id);
+    return { ok: false, error };
+  }
+}
+
+/**
  * Envia as mensagens pendentes. Chamado logo após enfileirar e também pelo cron.
  * Falhas são reagendadas com espera progressiva; após 3 tentativas viram "failed"
  * e aparecem como alerta no painel.

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame } from "../actions";
+import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame, restoreGame } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -27,20 +27,31 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   pending_review: { label: "Pagou sem vaga — decidir", cls: "badge-danger" },
 };
 
-export default function GameManager({ game, participants, splitter }: { game: Game; participants: Participant[]; splitter?: React.ReactNode }) {
+const ACTION_LABEL: Record<string, string> = {
+  open_list: "Lista aberta",
+  close_list: "Lista fechada",
+  cancel_game: "Jogo cancelado",
+  restore_game: "Jogo restaurado",
+  reset_game: "Lista resetada",
+  save_teams_split: "Divisão de times salva",
+  send_teams: "Times enviados ao grupo",
+};
+
+export default function GameManager({ game, participants, splitter, history }: { game: Game; participants: Participant[]; splitter?: React.ReactNode; history?: { action: string; at: string }[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
 
   const confirmed = participants.filter((p) => p.status === "confirmed");
   const invited = participants.filter((p) => p.status === "invited");
   const others = participants.filter((p) => !["confirmed", "invited"].includes(p.status) && p.status !== "removed");
 
   function run(fn: () => Promise<unknown>, successMsg?: string) {
+    setMsg(null);
     startTransition(async () => {
       const res = (await fn()) as { error?: string } | undefined;
-      if (res?.error) { setMsg(res.error); return; }
-      if (successMsg) setMsg(successMsg);
+      if (res?.error) { setMsg({ type: "error", text: res.error }); return; }
+      if (successMsg) setMsg({ type: "ok", text: successMsg });
       router.refresh();
     });
   }
@@ -54,7 +65,11 @@ export default function GameManager({ game, participants, splitter }: { game: Ga
         </p>
       </div>
 
-      {msg && <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm text-[var(--success)]">{msg}</p>}
+      {msg && (
+        <p className={`rounded-lg px-3 py-2 text-sm ${msg.type === "ok" ? "bg-[var(--success-bg)] text-[var(--success)]" : "bg-[var(--danger-bg)] text-[var(--danger)]"}`}>
+          {msg.text}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {game.status === "scheduled" && (
@@ -69,6 +84,12 @@ export default function GameManager({ game, participants, splitter }: { game: Ga
         {game.hasWhatsApp && (
           <button className="btn btn-outline btn-sm" disabled={pending}
             onClick={() => run(() => sendListNow(game.id), "Lista enviada ao grupo!")}>{pending ? <Spinner size={14} /> : "📤"} Enviar lista ao grupo</button>
+        )}
+        {game.status === "canceled" && (
+          <button className="btn btn-primary btn-sm" disabled={pending}
+            onClick={() => run(() => restoreGame(game.id), "Jogo restaurado! A lista voltou ao estado normal.")}>
+            {pending && <Spinner size={14} />} ♻️ Restaurar jogo
+          </button>
         )}
         {game.status !== "canceled" && participants.length > 0 && (
           <button className="btn btn-danger-soft btn-sm" disabled={pending}
@@ -127,6 +148,19 @@ export default function GameManager({ game, participants, splitter }: { game: Ga
               } />
           ))}
         </Section>
+      )}
+      {history && history.length > 0 && (
+        <details className="card p-4">
+          <summary className="cursor-pointer text-sm font-semibold">🕘 Histórico de ações deste jogo</summary>
+          <ul className="mt-3 space-y-1.5">
+            {history.map((h, i) => (
+              <li key={i} className="text-sm text-[var(--ink-soft)]">
+                {new Date(h.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                {" — "}{ACTION_LABEL[h.action] ?? h.action}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

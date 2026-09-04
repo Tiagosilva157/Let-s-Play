@@ -300,6 +300,8 @@ export const MANUAL: ManualSection[] = [
         { label: "Alguém desistiu fora do prazo", text: "O sistema bloqueia a desistência e mantém a cobrança. Se quiser abrir exceção, remova a pessoa manualmente pela tela do jogo." },
         { label: "Um mensalista não respondeu", text: "Ele fica como Aguardando resposta segurando a vaga. Você pode confirmá-lo ou removê-lo manualmente antes do jogo." },
         { label: "Preciso tirar alguém da lista", text: "Na tela do jogo, clique em Remover ao lado do nome. A vaga é liberada e a lista de espera é promovida." },
+        { label: "Cancelei um jogo por engano", text: "Na tela do jogo, use Restaurar jogo: ele volta ao estado natural (agendado ou com a lista aberta, conforme o horário). Fechou a lista sem querer? Use Reabrir lista." },
+        { label: "Como dividir os times", text: "Na tela do jogo, o bloco Dividir times gera quantas sugestões você quiser, sempre equilibradas pelo nível técnico interno. Escolha uma, ajuste manualmente se quiser e envie ao grupo — a divisão fica salva no jogo e só muda se você trocar." },
       ]},
     ],
   },

@@ -37,6 +37,15 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
     chargeStatus: (p.charges as unknown as { status: string } | null)?.status ?? null,
   }));
 
+  const { data: history } = await db
+    .from("audit_logs")
+    .select("action, created_at, after")
+    .eq("entity", "games").eq("entity_id", id)
+    .order("created_at", { ascending: false })
+    .limit(12);
+
+  const savedSplit = (game.teams_split as { teams?: string[][] } | null)?.teams ?? null;
+
   const confirmedForSplit = (parts ?? [])
     .filter((p) => p.status === "confirmed")
     .map((p) => {
@@ -56,7 +65,8 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
         hasWhatsApp: !!team.whatsapp_group_id,
       }}
       participants={participants}
-      splitter={<TeamSplitter gameId={game.id} confirmed={confirmedForSplit} hasWhatsApp={!!team.whatsapp_group_id} />}
+      splitter={<TeamSplitter gameId={game.id} confirmed={confirmedForSplit} hasWhatsApp={!!team.whatsapp_group_id} savedSplit={savedSplit} />}
+      history={(history ?? []).map((h) => ({ action: h.action, at: h.created_at }))}
     />
   );
 }
