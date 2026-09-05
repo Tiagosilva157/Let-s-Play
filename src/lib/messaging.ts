@@ -314,6 +314,28 @@ export async function sendPaymentConfirmed(teamId: string, phone: string, player
   await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body });
 }
 
+/**
+ * Lembrete de vencimento da mensalidade, no dia do vencimento, direto no
+ * WhatsApp do mensalista — instruções + código Pix isolado na 2ª mensagem.
+ */
+export async function sendMembershipDueReminder(opts: {
+  teamId: string; phone: string; playerName: string; teamName: string;
+  amount: number; dueDate: string; copypaste: string; chargeId: string;
+}) {
+  const intro = [
+    `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
+    ``,
+    `Sua mensalidade do *${opts.teamName}* vence *hoje* (${fmtDate(opts.dueDate)}).`,
+    `Valor: *${fmtMoney(opts.amount)}*`,
+    ``,
+    `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`,
+    ``,
+    `Pagando hoje, você garante o mês sem pendências. ✅`,
+  ].join("\n");
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false, dedupe_key: `sub_due_intro:${opts.chargeId}` });
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: `sub_due:${opts.chargeId}` });
+}
+
 export async function enqueueIndividual(teamId: string | null, phone: string, body: string) {
   await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body });
 }
@@ -352,6 +374,13 @@ export async function sendGroupDirect(teamId: string, groupId: string, body: str
  */
 export async function dispatchPending(limit = 20): Promise<{ sent: number; failed: number }> {
   const db = supabaseAdmin();
+
+  // destrava envios abandonados em "sending" (processo reiniciado no meio do
+  // envio): viram "failed" e aparecem como alerta, em vez de sumir para sempre
+  await db.from("message_dispatches")
+    .update({ status: "failed", error: "Envio interrompido — o servidor reiniciou no meio. Reenvie manualmente se necessário." })
+    .eq("status", "sending")
+    .lt("created_at", new Date(Date.now() - 15 * 60_000).toISOString());
   const { data: pending } = await db
     .from("message_dispatches")
     .select("*")

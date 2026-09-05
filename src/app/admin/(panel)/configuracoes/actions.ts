@@ -38,6 +38,17 @@ export async function saveSettings(formData: FormData) {
     }
   }
 
+  // chaves do Asaas começam com "$aact_" — se aparecer no campo do GP Connect
+  // é engano de colagem, e derrubaria TODOS os envios de WhatsApp com 401
+  const gpToken = String(formData.get("gpconnect_token") ?? "").trim();
+  if (gpToken.startsWith("$aact_")) {
+    return { error: "O token colado no campo GP Connect é uma chave do ASAAS (começa com $aact_). Cole aqui o token da conexão do GP Connect — com a chave errada, nenhuma mensagem de WhatsApp sai." };
+  }
+  const whToken = String(formData.get("asaas_webhook_token") ?? "").trim();
+  if (whToken.startsWith("$aact_")) {
+    return { error: "O valor colado no campo Token do Webhook é uma chave de API do Asaas (começa com $aact_). O token do webhook é outro valor, definido por você." };
+  }
+
   const saved: string[] = [];
   for (const [key, raw] of formData.entries()) {
     if (!ALLOWED_KEYS.has(key)) continue;

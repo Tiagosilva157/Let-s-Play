@@ -42,8 +42,47 @@ export async function GET(req: NextRequest) {
     } catch { /* Asaas indisponível — tenta no próximo ciclo */ }
   }
 
+  // "hoje" no fuso do Brasil (o servidor roda em UTC)
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+
+  /** Já enviamos (ou estamos enviando) uma mensagem com essa chave? Protege
+   *  contra duplicata quando o servidor reinicia depois das 06h. */
+  async function alreadyDispatched(dedupeKey: string) {
+    const { data } = await db.from("message_dispatches")
+      .select("id").eq("dedupe_key", dedupeKey)
+      .in("status", ["queued", "sending", "sent"]).limit(1).maybeSingle();
+    return !!data;
+  }
+
+  // lembrete de vencimento: mensalidades que vencem HOJE → Pix no WhatsApp
+  const { data: dueToday } = await db
+    .from("charges")
+    .select("id, amount, due_date, asaas_payment_id, team_id, players(name, phone), teams(name)")
+    .eq("type", "subscription")
+    .in("status", ["pending", "overdue"])
+    .eq("due_date", today)
+    .not("asaas_payment_id", "is", null)
+    .limit(200);
+  let dueReminders = 0;
+  const { sendMembershipDueReminder } = await import("@/lib/messaging");
+  for (const c of dueToday ?? []) {
+    if (await alreadyDispatched(`sub_due:${c.id}`)) continue;
+    const pl = c.players as unknown as { name: string; phone: string };
+    const tm = c.teams as unknown as { name: string };
+    if (!pl?.phone) continue;
+    try {
+      const qr = await Asaas.getPixQr(c.asaas_payment_id!);
+      await sendMembershipDueReminder({
+        teamId: c.team_id, phone: pl.phone, playerName: pl.name, teamName: tm?.name ?? "",
+        amount: Number(c.amount), dueDate: c.due_date, copypaste: qr.payload, chargeId: c.id,
+      });
+      dueReminders++;
+    } catch (e) {
+      console.error("[cron] lembrete de mensalidade falhou:", c.id, String(e).slice(0, 150));
+    }
+  }
+
   // lembrete: jogos de hoje ainda abertos → envia a lista no grupo pela manhã
-  const today = new Date().toISOString().slice(0, 10);
   const { data: todayGames } = await db
     .from("games")
     .select("id, teams(id, whatsapp_group_id)")
@@ -57,6 +96,7 @@ export async function GET(req: NextRequest) {
     const built = await buildListMessage(g.id);
     if (!built) continue;
     const dedupeKey = `reminder:${g.id}`;
+    if (await alreadyDispatched(dedupeKey)) continue;
     const { error } = await db.from("message_dispatches").insert({
       team_id: team.id, game_id: g.id, kind: "group",
       recipient: team.whatsapp_group_id,
@@ -66,5 +106,5 @@ export async function GET(req: NextRequest) {
     if (!error) reminders++;
   }
 
-  return NextResponse.json({ ok: true, generated, reconciled, reminders });
+  return NextResponse.json({ ok: true, generated, reconciled, reminders, dueReminders });
 }
