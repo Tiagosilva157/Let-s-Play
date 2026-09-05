@@ -93,6 +93,36 @@ export async function toggleList(gameId: string, open: boolean) {
 }
 
 /**
+ * Devolve um jogo fechado (ou aberto em teste) ao status "Agendado",
+ * recalculando o horário de abertura pela regra da turma. Assim o robô
+ * volta a cuidar dele: abre a lista e dispara no grupo na hora certa.
+ * As confirmações já registradas são preservadas.
+ */
+export async function backToScheduled(gameId: string) {
+  const admin = await requireAdmin();
+  const db = supabaseAdmin();
+  const { data: g } = await db.from("games")
+    .select("id, status, date, time, teams(open_hours_before)")
+    .eq("id", gameId).maybeSingle();
+  if (!g) return { error: "Jogo não encontrado." };
+  if (!["closed", "open"].includes(g.status)) return { error: "Só listas abertas ou fechadas podem voltar para Agendado." };
+
+  const team = g.teams as unknown as { open_hours_before: number };
+  const gameStart = new Date(`${g.date}T${g.time}-03:00`);
+  if (gameStart <= new Date()) return { error: "O horário deste jogo já passou — não faz sentido voltar para Agendado." };
+
+  const opensAt = new Date(gameStart.getTime() - (team?.open_hours_before ?? 48) * 3600_000);
+  await db.from("games").update({ status: "scheduled", opens_at: opensAt.toISOString() }).eq("id", gameId);
+  await auditAdmin(admin.id, "back_to_scheduled", "games", gameId, { opensAt: opensAt.toISOString() });
+  revalidatePath(`/admin/jogos/${gameId}`);
+
+  if (opensAt <= new Date()) {
+    return { ok: true, note: "O horário de abertura já passou — o robô vai reabrir a lista e avisar o grupo em até 1 minuto." };
+  }
+  return { ok: true, note: `Agendado! A lista abre automaticamente em ${opensAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} e o grupo será avisado.` };
+}
+
+/**
  * Restaura um jogo cancelado por engano, voltando ao estado natural:
  * se a abertura ainda não chegou → agendado; senão → lista aberta
  * (mensalistas reconvidados e prazos estendidos se necessário).

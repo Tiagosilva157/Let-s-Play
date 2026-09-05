@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame, restoreGame } from "../actions";
+import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame, restoreGame, backToScheduled } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -32,6 +32,7 @@ const ACTION_LABEL: Record<string, string> = {
   close_list: "Lista fechada",
   cancel_game: "Jogo cancelado",
   restore_game: "Jogo restaurado",
+  back_to_scheduled: "Voltou para Agendado (disparo automático reativado)",
   reset_game: "Lista resetada",
   save_teams_split: "Divisão de times salva",
   send_teams: "Times enviados ao grupo",
@@ -49,9 +50,10 @@ export default function GameManager({ game, participants, splitter, history }: {
   function run(fn: () => Promise<unknown>, successMsg?: string) {
     setMsg(null);
     startTransition(async () => {
-      const res = (await fn()) as { error?: string } | undefined;
+      const res = (await fn()) as { error?: string; note?: string } | undefined;
       if (res?.error) { setMsg({ type: "error", text: res.error }); return; }
-      if (successMsg) setMsg({ type: "ok", text: successMsg });
+      if (res?.note) setMsg({ type: "ok", text: res.note });
+      else if (successMsg) setMsg({ type: "ok", text: successMsg });
       router.refresh();
     });
   }
@@ -80,6 +82,10 @@ export default function GameManager({ game, participants, splitter, history }: {
         )}
         {game.status === "closed" && (
           <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => toggleList(game.id, true))}>{pending && <Spinner size={14} />} Reabrir lista</button>
+        )}
+        {["closed", "open"].includes(game.status) && (
+          <button className="btn btn-outline btn-sm" disabled={pending} title="Devolve o jogo ao disparo automático: a lista abre sozinha na hora certa"
+            onClick={() => run(() => backToScheduled(game.id))}>{pending && <Spinner size={14} />} ↩️ Voltar para Agendado</button>
         )}
         {game.hasWhatsApp && (
           <button className="btn btn-outline btn-sm" disabled={pending}

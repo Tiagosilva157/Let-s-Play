@@ -13,6 +13,11 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   expired: { label: "Expirado", cls: "badge-neutral" },
 };
 
+function refMonth(dueDate: string) {
+  const m = new Date(`${dueDate}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}
+
 export default async function FinancePage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   await requireAdmin();
   const { status } = await searchParams;
@@ -68,7 +73,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
               <div>
                 <p className="font-medium">{(c.players as unknown as { name: string })?.name}</p>
                 <p className="text-sm text-[var(--ink-soft)]">
-                  {(c.teams as unknown as { name: string })?.name} · {c.type === "dropin" ? `Avulso ${(c.games as unknown as { date: string })?.date ? "— " + new Date(`${(c.games as unknown as { date: string }).date}T12:00:00`).toLocaleDateString("pt-BR") : ""}` : "Mensalidade"}
+                  {(c.teams as unknown as { name: string })?.name} · {c.type === "dropin" ? `Avulso ${(c.games as unknown as { date: string })?.date ? "— " + new Date(`${(c.games as unknown as { date: string }).date}T12:00:00`).toLocaleDateString("pt-BR") : ""}` : `Mensalidade${c.due_date ? ` — ${refMonth(c.due_date)} · vence ${new Date(`${c.due_date}T12:00:00`).toLocaleDateString("pt-BR")}` : ""}`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
