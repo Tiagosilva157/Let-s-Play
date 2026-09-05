@@ -62,13 +62,24 @@ export const Asaas = {
   refundPayment: (paymentId: string) =>
     asaas<AsaasPayment>(`/payments/${paymentId}/refund`, { method: "POST", body: "{}" }),
 
-  createSubscription: (data: {
+  // Somente Pix: boleto gera taxas extras no Asaas. Se por qualquer motivo a
+  // assinatura voltar com outro tipo, corrigimos imediatamente (inclusive as
+  // parcelas pendentes já geradas).
+  createSubscription: async (data: {
     customer: string; value: number; nextDueDate: string; description: string; externalReference: string;
-  }) =>
-    asaas<{ id: string; status: string }>("/subscriptions", {
+  }) => {
+    const sub = await asaas<{ id: string; status: string; billingType?: string }>("/subscriptions", {
       method: "POST",
       body: JSON.stringify({ ...data, billingType: "PIX", cycle: "MONTHLY" }),
-    }),
+    });
+    if (sub.billingType && sub.billingType !== "PIX") {
+      await asaas(`/subscriptions/${sub.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ billingType: "PIX", updatePendingPayments: true }),
+      });
+    }
+    return sub;
+  },
 
   updateSubscription: (id: string, data: Partial<{ value: number; status: "ACTIVE" | "INACTIVE" }>) =>
     asaas<{ id: string }>(`/subscriptions/${id}`, { method: "PUT", body: JSON.stringify(data) }),
