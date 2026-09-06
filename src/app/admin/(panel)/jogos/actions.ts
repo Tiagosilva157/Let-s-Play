@@ -21,11 +21,72 @@ export async function adminConfirm(gameId: string, playerId: string, kind: "memb
   revalidatePath(`/admin/jogos/${gameId}`);
 }
 
+/**
+ * Admin coloca qualquer jogador na lista manualmente (mensalista ou avulso).
+ * Respeita a capacidade; avisa o grupo e envia a lista atualizada.
+ * Avulso adicionado assim entra confirmado SEM cobrança (ex.: pagou em dinheiro).
+ */
+export async function adminAddPlayer(gameId: string, playerId: string) {
+  const admin = await requireAdmin();
+  const db = supabaseAdmin();
+
+  const { data: game } = await db.from("games")
+    .select("id, status, team_id, capacity_override, teams(capacity, whatsapp_group_id, name)")
+    .eq("id", gameId).maybeSingle();
+  if (!game) return { error: "Jogo não encontrado." };
+  if (game.status === "canceled") return { error: "Este jogo está cancelado — restaure-o primeiro." };
+  const team = game.teams as unknown as { capacity: number; whatsapp_group_id: string | null; name: string };
+
+  const { data: player } = await db.from("players").select("id, name").eq("id", playerId).maybeSingle();
+  if (!player) return { error: "Jogador não encontrado." };
+
+  const { data: membership } = await db.from("team_members").select("id")
+    .eq("team_id", game.team_id).eq("player_id", playerId).eq("status", "active").maybeSingle();
+  const kind: "member" | "dropin" = membership ? "member" : "dropin";
+
+  // capacidade: quem segura vaga = confirmados + aguardando Pix + mensalistas sem resposta
+  const { data: existing } = await db.from("game_participants")
+    .select("id, player_id, status").eq("game_id", gameId);
+  const alreadyIn = (existing ?? []).find((p) => p.player_id === playerId);
+  if (alreadyIn?.status === "confirmed") return { error: `${player.name} já está confirmado neste jogo.` };
+  const holding = (existing ?? []).filter((p) =>
+    ["confirmed", "reserved", "invited"].includes(p.status) && p.player_id !== playerId).length;
+  const capacity = game.capacity_override ?? team.capacity;
+  if (holding >= capacity) return { error: `Lista cheia (${holding}/${capacity}). Remova alguém antes de adicionar.` };
+
+  if (kind === "member") {
+    const { data: res } = await db.rpc("fn_confirm_member", { p_game_id: gameId, p_player_id: playerId, p_source: "admin" });
+    if (!res?.ok) return { error: res?.error === "full" ? "Lista cheia." : "Não foi possível confirmar este mensalista." };
+  } else {
+    await db.from("game_participants").upsert(
+      { game_id: gameId, player_id: playerId, kind: "dropin", status: "confirmed", source: "admin", confirmed_at: new Date().toISOString(), promoted_from_waitlist: false },
+      { onConflict: "game_id,player_id" });
+  }
+
+  await auditAdmin(admin.id, "admin_add_player", "game_participants", `${gameId}:${playerId}`, { kind });
+
+  // avisa o grupo e manda a lista atualizada em seguida
+  if (team.whatsapp_group_id) {
+    await enqueueGroupMessage(game.team_id, team.whatsapp_group_id,
+      `✅ *${player.name}* foi confirmado na lista pelo organizador.`, gameId).catch(() => {});
+  }
+  await enqueueListUpdate(gameId).catch(() => {});
+  revalidatePath(`/admin/jogos/${gameId}`);
+  return { ok: true };
+}
+
 export async function adminRemove(gameId: string, playerId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
+  const { data: pl } = await db.from("players").select("name").eq("id", playerId).maybeSingle();
   await db.from("game_participants").update({ status: "removed", source: "admin" })
     .eq("game_id", gameId).eq("player_id", playerId);
+  // avisa o grupo da retirada manual
+  const { data: g } = await db.from("games").select("team_id, teams(whatsapp_group_id)").eq("id", gameId).maybeSingle();
+  const grp = (g?.teams as unknown as { whatsapp_group_id: string | null } | null)?.whatsapp_group_id;
+  if (grp && pl) {
+    await enqueueGroupMessage(g!.team_id, grp, `➖ *${pl.name}* foi retirado da lista pelo organizador.`, gameId).catch(() => {});
+  }
   const { data: promo } = await db.rpc("fn_promote_waitlist", { p_game_id: gameId });
   await auditAdmin(admin.id, "admin_remove", "game_participants", `${gameId}:${playerId}`);
   const promoted = (promo?.promoted ?? []) as string[];

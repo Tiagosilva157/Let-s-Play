@@ -37,6 +37,19 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
     chargeStatus: (p.charges as unknown as { status: string } | null)?.status ?? null,
   }));
 
+  // jogadores que o admin pode colocar manualmente na lista
+  const [{ data: allPlayers }, { data: activeMembers }] = await Promise.all([
+    db.from("players").select("id, name, phone").eq("active", true).order("name"),
+    db.from("team_members").select("player_id").eq("team_id", game.team_id).eq("status", "active"),
+  ]);
+  const memberIds = new Set((activeMembers ?? []).map((m) => m.player_id));
+  const inListIds = new Set((parts ?? [])
+    .filter((p) => ["confirmed", "invited", "reserved", "waitlist"].includes(p.status))
+    .map((p) => (p.players as unknown as { id: string }).id));
+  const addable = (allPlayers ?? [])
+    .filter((p) => !inListIds.has(p.id))
+    .map((p) => ({ id: p.id, name: p.name, phone: formatPhoneBR(p.phone), isMember: memberIds.has(p.id) }));
+
   const { data: history } = await db
     .from("audit_logs")
     .select("action, created_at, after")
@@ -65,6 +78,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
         hasWhatsApp: !!team.whatsapp_group_id,
       }}
       participants={participants}
+      addable={addable}
       splitter={<TeamSplitter gameId={game.id} confirmed={confirmedForSplit} hasWhatsApp={!!team.whatsapp_group_id} savedSplit={savedSplit} />}
       history={(history ?? []).map((h) => ({ action: h.action, at: h.created_at }))}
     />

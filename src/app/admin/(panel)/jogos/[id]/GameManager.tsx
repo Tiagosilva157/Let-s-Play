@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame, restoreGame, backToScheduled } from "../actions";
+import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame, restoreGame, backToScheduled } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -38,10 +38,13 @@ const ACTION_LABEL: Record<string, string> = {
   send_teams: "Times enviados ao grupo",
 };
 
-export default function GameManager({ game, participants, splitter, history }: { game: Game; participants: Participant[]; splitter?: React.ReactNode; history?: { action: string; at: string }[] }) {
+interface Addable { id: string; name: string; phone: string; isMember: boolean }
+
+export default function GameManager({ game, participants, addable = [], splitter, history }: { game: Game; participants: Participant[]; addable?: Addable[]; splitter?: React.ReactNode; history?: { action: string; at: string }[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const [search, setSearch] = useState("");
 
   const confirmed = participants.filter((p) => p.status === "confirmed");
   const invited = participants.filter((p) => p.status === "invited");
@@ -118,6 +121,34 @@ export default function GameManager({ game, participants, splitter, history }: {
             }}>Cancelar jogo</button>
         )}
       </div>
+
+      {game.status !== "canceled" && addable.length > 0 && (
+        <details className="card p-4">
+          <summary className="cursor-pointer text-sm font-semibold">➕ Adicionar jogador na lista</summary>
+          <p className="mt-2 text-xs text-[var(--ink-soft)]">
+            Coloca o jogador direto como confirmado. Avulso adicionado assim entra <b>sem cobrança</b> (ex.: pagou em dinheiro). O grupo é avisado e recebe a lista atualizada.
+          </p>
+          <input className="input mt-3 w-full" placeholder="Buscar por nome ou telefone..."
+            value={search} onChange={(e) => setSearch(e.target.value)} />
+          <ul className="mt-2 max-h-64 divide-y divide-[var(--line)] overflow-y-auto">
+            {addable
+              .filter((p) => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search))
+              .slice(0, 30)
+              .map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{p.name} <span className="text-xs text-[var(--ink-soft)]">({p.isMember ? "mensalista" : "avulso"})</span></p>
+                    <p className="text-xs text-[var(--ink-soft)]">{p.phone}</p>
+                  </div>
+                  <button className="btn btn-outline btn-sm shrink-0" disabled={pending}
+                    onClick={() => run(() => adminAddPlayer(game.id, p.id), `${p.name} confirmado na lista — o grupo foi avisado.`)}>
+                    {pending ? <Spinner size={14} /> : "Adicionar"}
+                  </button>
+                </li>
+              ))}
+          </ul>
+        </details>
+      )}
 
       {splitter}
 
