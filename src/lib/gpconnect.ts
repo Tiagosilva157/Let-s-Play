@@ -10,7 +10,9 @@ const DEFAULT_BASE = "https://api.gpconnect.com.br";
 async function gp(path: string, body: Record<string, unknown>) {
   const s = await getSettings();
   const token = (s.gpconnect_token || process.env.GPCONNECT_TOKEN || "").trim();
-  const baseUrl = (s.gpconnect_base_url || process.env.GPCONNECT_BASE_URL || DEFAULT_BASE)
+  // override local para testes/screenshots: aponta os envios para um servidor
+  // falso na própria máquina, sem tocar na configuração de produção
+  const baseUrl = (process.env.GPCONNECT_BASE_URL_OVERRIDE || s.gpconnect_base_url || process.env.GPCONNECT_BASE_URL || DEFAULT_BASE)
     .trim()
     .replace(/\/$/, "");
 
