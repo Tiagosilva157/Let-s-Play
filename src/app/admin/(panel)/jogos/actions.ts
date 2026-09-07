@@ -361,8 +361,7 @@ export async function resolvePendingReview(participantId: string, decision: "cre
   if (!part) return { error: "Participação não encontrada." };
   const charge = part.charges as unknown as { id: string; amount: number; team_id: string; asaas_payment_id: string | null } | null;
 
-  const { grantCreditForCharge, revokeCreditsForCharge } = await import("@/lib/credits");
-  const { pendingRefundOf } = await import("@/lib/asaas");
+  const { grantCreditForCharge } = await import("@/lib/credits");
 
   if (decision === "credit" && charge) {
     // idempotente: a mesma cobrança nunca gera dois créditos
@@ -380,40 +379,15 @@ export async function resolvePendingReview(participantId: string, decision: "cre
   }
 
   if (decision === "refund") {
-    if (!charge?.asaas_payment_id) return { error: "Esta cobrança não tem pagamento no Asaas para estornar." };
-
-    // 1. já existe um estorno em andamento? não pedimos outro
-    const before = await Asaas.getPayment(charge.asaas_payment_id).catch(() => null);
-    if (before && pendingRefundOf(before)) {
-      return { ok: true, note: "Já existe um estorno deste pagamento aguardando a SUA autorização no Asaas (ação crítica). Aprove lá — não é preciso clicar de novo. Quando concluir, o sistema atualiza sozinho." };
-    }
-
-    // 2. pede o estorno
-    let awaiting = false;
-    try {
-      const resp = await Asaas.refundPayment(charge.asaas_payment_id);
-      awaiting = !!pendingRefundOf(resp);
-    } catch (e) {
-      // o Asaas pode registrar o estorno como "aguardando autorização" e ainda
-      // assim responder erro — conferimos antes de dizer que falhou
-      const after = await Asaas.getPayment(charge.asaas_payment_id).catch(() => null);
-      if (after && pendingRefundOf(after)) {
-        awaiting = true;
-      } else {
-        const msg = String(e).replace(/^Error:\s*/, "").slice(0, 220);
-        return { error: "O Asaas recusou o estorno: " + msg };
-      }
-    }
-
-    if (awaiting) {
+    if (!charge) return { error: "Esta participação não tem cobrança para estornar." };
+    const { refundChargeInCash } = await import("@/lib/refund");
+    const res = await refundChargeInCash(charge.id);
+    if (!res.ok) return { error: res.error };
+    if (!res.done) {
       await auditAdmin(admin.id, "refund_awaiting_authorization", "charges", charge.id, { participantId });
       revalidatePath(`/admin/jogos/${part.game_id}`);
-      return { ok: true, note: "Estorno solicitado! O Asaas exige a sua autorização (ação crítica): aprove no app ou painel do Asaas. Assim que aprovar, o sistema marca como estornado sozinho." };
+      return { ok: true, note: res.note };
     }
-
-    // 3. estorno concluído: cobrança estornada, crédito (se houver) deixa de valer
-    await db.from("charges").update({ status: "refunded" }).eq("id", charge.id);
-    await revokeCreditsForCharge(charge.id);
     await db.from("game_participants").update({ status: "removed" }).eq("id", participantId);
     await auditAdmin(admin.id, "resolve_pending_refund", "game_participants", participantId);
     revalidatePath(`/admin/jogos/${part.game_id}`);

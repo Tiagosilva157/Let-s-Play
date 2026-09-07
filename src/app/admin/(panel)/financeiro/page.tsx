@@ -41,19 +41,24 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
   const { data: creditRows } = await db
     .from("credits")
-    .select("id, amount, status, reason, created_at, players(name), teams(name), games:used_game_id(date)")
+    .select("id, amount, status, reason, created_at, players(name), teams(name), games:used_game_id(date), origin:origin_charge_id(asaas_payment_id, games(date))")
     .order("created_at", { ascending: false })
-    .limit(60);
-  const credits = (creditRows ?? []).map((c) => ({
-    id: c.id,
-    playerName: (c.players as unknown as { name: string })?.name ?? "?",
-    teamName: (c.teams as unknown as { name: string })?.name ?? "?",
-    amount: Number(c.amount),
-    status: c.status,
-    reason: c.reason ?? "",
-    createdAt: c.created_at,
-    usedGameDate: (c.games as unknown as { date: string } | null)?.date ?? null,
-  }));
+    .limit(100);
+  const credits = (creditRows ?? []).map((c) => {
+    const origin = c.origin as unknown as { asaas_payment_id: string | null; games: { date: string } | null } | null;
+    return {
+      id: c.id,
+      playerName: (c.players as unknown as { name: string })?.name ?? "?",
+      teamName: (c.teams as unknown as { name: string })?.name ?? "?",
+      amount: Number(c.amount),
+      status: c.status,
+      reason: c.reason ?? "",
+      createdAt: c.created_at,
+      usedGameDate: (c.games as unknown as { date: string } | null)?.date ?? null,
+      originGameDate: origin?.games?.date ?? null,
+      refundable: !!origin?.asaas_payment_id,
+    };
+  });
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString();
   const { data: recent } = await db
