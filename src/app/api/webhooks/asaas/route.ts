@@ -79,6 +79,15 @@ export async function POST(req: NextRequest) {
           charge_id: charge.id, asaas_event: payload.event, payload,
         });
 
+        // estorno concluído (inclusive o autorizado manualmente no Asaas):
+        // o crédito daquela cobrança deixa de valer e a pendência some da tela
+        if (payload.event === "PAYMENT_REFUNDED") {
+          const { revokeCreditsForCharge } = await import("@/lib/credits");
+          await revokeCreditsForCharge(charge.id);
+          await db.from("game_participants").update({ status: "removed" })
+            .eq("charge_id", charge.id).in("status", ["pending_review", "withdrawn"]);
+        }
+
         // pagamento de avulso confirmado → confirma vaga
         if ((payload.event === "PAYMENT_RECEIVED" || payload.event === "PAYMENT_CONFIRMED") && charge.type === "dropin" && charge.game_id) {
           const { data: result } = await db.rpc("fn_confirm_dropin_payment", { p_charge_id: charge.id });

@@ -22,6 +22,32 @@ export async function peekCredit(playerId: string, teamId: string, fee: number):
 }
 
 /**
+ * Concede crédito a partir de uma cobrança paga (desistência no prazo,
+ * jogo cancelado...). Idempotente: uma cobrança gera no máximo um crédito.
+ */
+export async function grantCreditForCharge(opts: {
+  playerId: string; teamId: string; amount: number; chargeId: string; reason: string; createdBy?: string | null;
+}): Promise<{ id: string; created: boolean }> {
+  const db = supabaseAdmin();
+  const { data: existing } = await db.from("credits").select("id").eq("origin_charge_id", opts.chargeId).neq("status", "revoked").limit(1).maybeSingle();
+  if (existing) return { id: existing.id, created: false };
+  const { data, error } = await db.from("credits").insert({
+    player_id: opts.playerId, team_id: opts.teamId, amount: opts.amount,
+    origin_charge_id: opts.chargeId, reason: opts.reason, created_by: opts.createdBy ?? null,
+  }).select("id").single();
+  if (error || !data) throw new Error(error?.message ?? "falha ao criar crédito");
+  return { id: data.id, created: true };
+}
+
+/** Estornou em dinheiro? O crédito daquela cobrança deixa de valer. */
+export async function revokeCreditsForCharge(chargeId: string) {
+  const db = supabaseAdmin();
+  await db.from("credits")
+    .update({ status: "revoked", updated_at: new Date().toISOString() })
+    .eq("origin_charge_id", chargeId).eq("status", "available");
+}
+
+/**
  * Tenta consumir o crédito (claim otimista — seguro contra corrida).
  * Devolve o crédito consumido ou null se alguém levou antes.
  */

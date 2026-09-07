@@ -29,9 +29,19 @@ export interface CustomerInput {
   name: string; mobilePhone: string; cpfCnpj: string;
   email?: string; externalReference?: string;
 }
+export interface AsaasRefund {
+  status: string; // PENDING | AWAITING_CRITICAL_ACTION_AUTHORIZATION | DONE | CANCELLED
+  value: number; dateCreated: string;
+}
 export interface AsaasPayment {
   id: string; status: string; value: number; dueDate: string;
   invoiceUrl?: string;
+  refunds?: AsaasRefund[];
+}
+
+/** Estorno já pedido e ainda não concluído (evita pedir de novo). */
+export function pendingRefundOf(p: AsaasPayment): AsaasRefund | null {
+  return (p.refunds ?? []).find((r) => ["PENDING", "AWAITING_CRITICAL_ACTION_AUTHORIZATION"].includes(r.status)) ?? null;
 }
 export interface AsaasPixQr { encodedImage: string; payload: string; expirationDate?: string }
 

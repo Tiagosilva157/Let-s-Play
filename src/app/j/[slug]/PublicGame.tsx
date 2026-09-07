@@ -21,12 +21,13 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PublicGame({ game, participants, player, myStatus, isMember }: {
+export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null }: {
   game: Game;
   participants: Participant[];
   player: Player | null;
   myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null;
   isMember: boolean;
+  credit?: number | null; // crédito disponível do avulso nesta turma (cobre a taxa)
 }) {
   // prazo de desistência avaliado já na renderização (não só ao clicar)
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
@@ -154,6 +155,12 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     if (data.error === "needs_billing_data") { setStep("billing"); return; }
     if (data.waitlisted) { refresh(); return; }
     if (data.pix) { setPix(data.pix); setStep("idle"); return; }
+    if (data.credit_granted) {
+      setIntentNote(`✅ Desistência registrada. Os ${fmtMoney(Number(data.credit_amount))} que você pagou viraram crédito — na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo.`);
+    }
+    if (data.credit_used) {
+      setIntentNote(`🎫 Vaga garantida usando seu crédito de ${fmtMoney(Number(data.amount))} — nada a pagar!`);
+    }
     refresh();
   }
 
@@ -309,6 +316,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                       </button>
                       <p className="text-xs text-center text-[var(--ink-soft)]">
                         Você pode desistir até {withdrawDeadline}
+                        {myStatus.kind === "dropin" && " — desistindo no prazo, o valor pago vira crédito para o próximo jogo"}
                       </p>
                     </>
                   ) : (
@@ -383,9 +391,16 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                   </>
                 ) : (
                   <>
+                    {credit != null && (
+                      <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm text-[var(--success)]">
+                        🎫 Você tem um crédito de <b>{fmtMoney(credit)}</b> nesta turma — sua próxima vaga sai sem pagar.
+                      </p>
+                    )}
                     <button className="btn btn-primary" onClick={() => doAction("reserve")}
                       disabled={busy || closed || game.spots_available <= 0}>
-                      {busy && <Spinner />} Participar — {fmtMoney(Number(game.dropin_fee))} via Pix
+                      {busy && <Spinner />} {credit != null
+                        ? "Participar — usar meu crédito"
+                        : `Participar — ${fmtMoney(Number(game.dropin_fee))} via Pix`}
                     </button>
                     {game.spots_available <= 0 && !closed && (
                       <button className="btn btn-outline" onClick={() => doAction("reserve")} disabled={busy}>

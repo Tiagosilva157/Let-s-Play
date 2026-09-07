@@ -30,6 +30,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
   const player = await getSessionPlayer();
   let myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null = null;
   let isMember = false;
+  let credit: number | null = null;
   if (player) {
     const { data: gp } = await db
       .from("game_participants")
@@ -48,6 +49,11 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
         .eq("status", "active")
         .maybeSingle();
       isMember = !!m;
+      if (!isMember) {
+        const { peekCredit } = await import("@/lib/credits");
+        const c = await peekCredit(player.id, teamRow.id, Number(game.dropin_fee));
+        credit = c ? Number(c.amount) : null;
+      }
     }
   }
 
@@ -58,6 +64,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
       player={player}
       myStatus={myStatus}
       isMember={isMember}
+      credit={credit}
     />
   );
 }

@@ -21,21 +21,32 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
 
   const { data: parts } = await db
     .from("game_participants")
-    .select("id, kind, status, reserved_until, confirmed_at, players(id, name, phone, skill_level), charges(status, amount)")
+    .select("id, kind, status, reserved_until, confirmed_at, players(id, name, phone, skill_level), charges(id, status, amount)")
     .eq("game_id", id)
     .order("confirmed_at", { ascending: true });
 
   const team = game.teams as unknown as { name: string; capacity: number; whatsapp_group_id: string | null };
 
-  const participants = (parts ?? []).map((p) => ({
-    id: p.id,
-    playerId: (p.players as unknown as { id: string }).id,
-    name: (p.players as unknown as { name: string }).name,
-    phone: formatPhoneBR((p.players as unknown as { phone: string }).phone),
-    kind: p.kind as "member" | "dropin",
-    status: p.status,
-    chargeStatus: (p.charges as unknown as { status: string } | null)?.status ?? null,
-  }));
+  // cobranças que já viraram crédito (desistência no prazo / decisão do admin)
+  const chargeIds = (parts ?? []).map((p) => (p.charges as unknown as { id: string } | null)?.id).filter(Boolean) as string[];
+  const { data: creditRows } = chargeIds.length
+    ? await db.from("credits").select("origin_charge_id").in("origin_charge_id", chargeIds).neq("status", "revoked")
+    : { data: [] as { origin_charge_id: string }[] };
+  const creditedCharges = new Set((creditRows ?? []).map((c) => c.origin_charge_id));
+
+  const participants = (parts ?? []).map((p) => {
+    const ch = p.charges as unknown as { id: string; status: string } | null;
+    return {
+      id: p.id,
+      playerId: (p.players as unknown as { id: string }).id,
+      name: (p.players as unknown as { name: string }).name,
+      phone: formatPhoneBR((p.players as unknown as { phone: string }).phone),
+      kind: p.kind as "member" | "dropin",
+      status: p.status,
+      chargeStatus: ch?.status ?? null,
+      hasCredit: !!ch && creditedCharges.has(ch.id),
+    };
+  });
 
   // jogadores que o admin pode colocar manualmente na lista
   const [{ data: allPlayers }, { data: activeMembers }] = await Promise.all([

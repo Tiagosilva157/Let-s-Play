@@ -6,7 +6,7 @@ import { getSessionPlayer } from "@/lib/session";
 import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer, normalizeCpfCnpj, MissingCustomerDataError } from "@/lib/asaas-customer";
 import { enqueueListUpdate, sendPixToPlayer, enqueueIndividual } from "@/lib/messaging";
-import { peekCredit, claimCredit } from "@/lib/credits";
+import { peekCredit, claimCredit, grantCreditForCharge } from "@/lib/credits";
 import { processPromotions } from "@/lib/waitlist";
 
 const Body = z.object({
@@ -63,6 +63,37 @@ export async function POST(req: NextRequest) {
       if (charge?.asaas_payment_id) {
         await Asaas.cancelPayment(charge.asaas_payment_id).catch(() => {});
         await db.from("charges").update({ status: "canceled" }).eq("id", charge.id);
+      }
+    } else if (result?.ok) {
+      // desistiu DENTRO do prazo já tendo pago: o valor vira crédito na hora,
+      // usado automaticamente na próxima vaga (e o admin ainda pode estornar)
+      const { data: paid } = await db
+        .from("charges")
+        .select("id, amount")
+        .eq("game_id", gameId).eq("player_id", player.id)
+        .in("status", ["received", "confirmed"])
+        .order("created_at", { ascending: false })
+        .limit(1).maybeSingle();
+      if (paid) {
+        const teamInfo = game.teams as unknown as { name: string };
+        const { data: pl } = await db.from("players").select("name, phone").eq("id", player.id).single();
+        try {
+          const credit = await grantCreditForCharge({
+            playerId: player.id, teamId: game.team_id, amount: Number(paid.amount), chargeId: paid.id,
+            reason: `Desistência dentro do prazo — jogo ${game.date.split("-").reverse().join("/")}`,
+          });
+          result.credit_granted = true;
+          result.credit_amount = Number(paid.amount);
+          if (credit.created && pl) {
+            await enqueueIndividual(game.team_id, pl.phone, [
+              `✅ ${pl.name.split(" ")[0]}, sua desistência do *${teamInfo.name}* de ${game.date.split("-").reverse().join("/")} foi registrada.`,
+              ``,
+              `Os *R$ ${Number(paid.amount).toFixed(2).replace(".", ",")}* que você pagou viraram *crédito*: na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo. 🎫`,
+            ].join("\n")).catch(() => {});
+          }
+        } catch (e) {
+          console.error("[credit] desistência no prazo:", String(e).slice(0, 150));
+        }
       }
     }
   } else if (action === "reserve" && !isMember) {

@@ -8,6 +8,7 @@ import Spinner from "@/components/Spinner";
 interface Participant {
   id: string; playerId: string; name: string; phone: string;
   kind: "member" | "dropin"; status: string; chargeStatus: string | null;
+  hasCredit?: boolean; // o pagamento já virou crédito (não precisa decidir)
 }
 interface Game {
   id: string; teamName: string; date: string; time: string; status: string;
@@ -22,6 +23,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   waitlist: { label: "Lista de espera", cls: "badge-neutral" },
   withdrawn: { label: "Desistiu", cls: "badge-neutral" },
   withdrawn_paid: { label: "Desistiu já pago — decidir", cls: "badge-danger" },
+  withdrawn_credit: { label: "Desistiu — valor virou crédito", cls: "badge-neutral" },
   no_show: { label: "Faltou", cls: "badge-danger" },
   removed: { label: "Removido", cls: "badge-neutral" },
   pending_review: { label: "Pagou sem vaga — decidir", cls: "badge-danger" },
@@ -181,11 +183,17 @@ export default function GameManager({ game, participants, addable = [], splitter
           {others.map((p) => (
             <Row key={p.id} p={p} pending={pending}
               actions={
-                p.status === "pending_review" ||
+                p.status === "withdrawn" && p.hasCredit ? (
+                  // já virou crédito automaticamente; o admin ainda pode devolver em dinheiro
+                  <button className="btn btn-outline btn-sm" title="Devolve o Pix pelo Asaas e cancela o crédito"
+                    onClick={() => { if (confirm(`Estornar em dinheiro para ${p.name}? O crédito dele deixa de valer.`)) run(() => resolvePendingReview(p.id, "refund"), "Estorno concluído."); }}>
+                    Estornar em dinheiro
+                  </button>
+                ) : p.status === "pending_review" ||
                 (p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")) ? (
                   <div className="flex gap-1">
                     <button className="btn btn-outline btn-sm" onClick={() => run(() => resolvePendingReview(p.id, "credit"), "Crédito gerado.")}>Crédito</button>
-                    <button className="btn btn-outline btn-sm" onClick={() => run(() => resolvePendingReview(p.id, "refund"), "Estorno solicitado.")}>Estornar</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => run(() => resolvePendingReview(p.id, "refund"), "Estorno concluído.")}>Estornar</button>
                   </div>
                 ) : ["waitlist", "declined", "withdrawn"].includes(p.status) ? (
                   <button className="btn btn-outline btn-sm" onClick={() => run(() => adminConfirm(game.id, p.playerId, p.kind))}>Confirmar manualmente</button>
@@ -224,8 +232,9 @@ function PendingDecisions({ participants, gameId, pending, onDone, startTransiti
   startTransition: (fn: () => Promise<void> | void) => void;
 }) {
   const paid = participants.filter((p) =>
-    p.status === "pending_review" ||
-    (p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")));
+    !p.hasCredit && (
+      p.status === "pending_review" ||
+      (p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? ""))));
   const [choice, setChoice] = useState<Record<string, "refund" | "credit">>({});
   if (paid.length < 2) return null; // com 1 só, os botões individuais resolvem
 
@@ -298,7 +307,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Row({ p, actions }: { p: Participant; pending: boolean; actions: React.ReactNode }) {
   const key = p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")
-    ? "withdrawn_paid"
+    ? (p.hasCredit ? "withdrawn_credit" : "withdrawn_paid")
     : p.status;
   const st = STATUS_LABEL[key] ?? { label: p.status, cls: "badge-neutral" };
   return (
