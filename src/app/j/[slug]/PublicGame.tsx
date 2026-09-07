@@ -43,6 +43,9 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   const [refreshing, startRefresh] = useTransition();
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  // o que a pessoa quis dizer ANTES de entrar: jogar ou avisar que não vai
+  const [intent, setIntent] = useState<"play" | "skip" | null>(null);
+  const [intentNote, setIntentNote] = useState("");
   const busy = loading || refreshing;
 
   // mantém o indicador girando até a tela realmente atualizar
@@ -103,8 +106,45 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     const data = await api("/api/auth/otp/verify", { phone, code, name: withName });
     if (!data) return;
     if (data.needs_name) { setStep("name"); return; }
-    refresh();
     setStep("idle");
+    // cumpre o que a pessoa escolheu na primeira tela ANTES de atualizar,
+    // para não haver duas atualizações concorrentes (a antiga venceria)
+    if (intent) {
+      const wants = intent;
+      setIntent(null);
+      await fulfillIntent(wants);
+      return;
+    }
+    refresh();
+  }
+
+  /**
+   * Executa a intenção escolhida na tela inicial.
+   * Mensalista: confirma/recusa direto. Avulso: o servidor recusa a ação de
+   * mensalista e nós apenas orientamos — cobrança nunca é gerada sozinha.
+   */
+  async function fulfillIntent(wants: "play" | "skip") {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/public/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameId: game.game_id, action: wants === "skip" ? "decline" : "confirm" }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!data?.ok) {
+        // não é mensalista desta turma: seguimos pelo fluxo de avulso
+        setIntentNote(wants === "skip"
+          ? "Tudo certo! Você não é mensalista desta turma, então não precisa avisar nada — só entra na lista quem garante a vaga. Obrigado por avisar. 👍"
+          : "Para garantir sua vaga, toque no botão abaixo — a vaga é confirmada após o pagamento do Pix.");
+      }
+    } catch {
+      setError("Sem conexão. Verifique a internet.");
+    } finally {
+      setLoading(false);
+    }
+    // fora da transição: garante que a sessão recém-criada seja lida pelo servidor
+    router.refresh();
   }
 
   async function doAction(action: string, billing?: { cpf: string; email: string }) {
@@ -178,9 +218,24 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                   {" "}Se você já estava na lista, entre abaixo para ver sua situação.
                 </p>
               )}
-              <button className="btn btn-primary" onClick={() => setStep("phone")}>
-                {closed ? "Entrar para ver minha situação" : "Confirmar presença"}
-              </button>
+              {closed ? (
+                <button className="btn btn-primary" onClick={() => setStep("phone")}>
+                  Entrar para ver minha situação
+                </button>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">Você vem jogar {fmtDate(game.date).split(",")[0]}?</p>
+                  <button className="btn btn-success" onClick={() => { setIntent("play"); setStep("phone"); }}>
+                    ✓ Vou jogar
+                  </button>
+                  <button className="btn btn-outline" onClick={() => { setIntent("skip"); setStep("phone"); }}>
+                    ❌ Não vou participar
+                  </button>
+                  <p className="text-center text-xs text-[var(--ink-soft)]">
+                    Nos dois casos é rapidinho: confirmamos seu WhatsApp e registramos sua resposta.
+                  </p>
+                </>
+              )}
             </>
           )}
 
@@ -238,6 +293,9 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
           {player && step !== "billing" && (
             <>
               <p className="text-sm">Olá, <b>{player.name.split(" ")[0]}</b>! 👋</p>
+              {intentNote && (
+                <p className="rounded-lg bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink-soft)]">{intentNote}</p>
+              )}
 
               {myStatus?.status === "confirmed" && (
                 <>
