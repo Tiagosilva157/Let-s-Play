@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resetGame, restoreGame, backToScheduled } from "../actions";
+import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resolvePendingBatch, resetGame, restoreGame, backToScheduled } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -122,6 +122,14 @@ export default function GameManager({ game, participants, addable = [], splitter
         )}
       </div>
 
+      <PendingDecisions
+        participants={participants}
+        gameId={game.id}
+        pending={pending}
+        onDone={(m) => { setMsg(m); router.refresh(); }}
+        startTransition={startTransition}
+      />
+
       {game.status !== "canceled" && addable.length > 0 && (
         <details className="card p-4">
           <summary className="cursor-pointer text-sm font-semibold">➕ Adicionar jogador na lista</summary>
@@ -200,6 +208,82 @@ export default function GameManager({ game, participants, addable = [], splitter
         </details>
       )}
     </div>
+  );
+}
+
+/**
+ * Painel de decisão em lote: jogadores que pagaram e ficaram sem jogo
+ * (cancelamento/desistência paga). O admin escolhe POR JOGADOR entre
+ * estorno e crédito e aplica tudo de uma vez, com resultado individual.
+ */
+function PendingDecisions({ participants, gameId, pending, onDone, startTransition }: {
+  participants: Participant[];
+  gameId: string;
+  pending: boolean;
+  onDone: (msg: { type: "ok" | "error"; text: string }) => void;
+  startTransition: (fn: () => Promise<void> | void) => void;
+}) {
+  const paid = participants.filter((p) =>
+    p.status === "pending_review" ||
+    (p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")));
+  const [choice, setChoice] = useState<Record<string, "refund" | "credit">>({});
+  if (paid.length < 2) return null; // com 1 só, os botões individuais resolvem
+
+  const decided = paid.filter((p) => choice[p.id]);
+
+  function apply() {
+    const decisions = decided.map((p) => ({ participantId: p.id, decision: choice[p.id] }));
+    const refunds = decisions.filter((d) => d.decision === "refund").length;
+    const credits = decisions.length - refunds;
+    if (!confirm(`Aplicar agora?\n\n• ${refunds} estorno(s) — o dinheiro volta via Asaas\n• ${credits} crédito(s) — para usar em outro jogo\n\nJogadores sem escolha marcada ficam para depois.`)) return;
+    startTransition(async () => {
+      const res = await resolvePendingBatch(gameId, decisions);
+      if (res && "error" in res && res.error) { onDone({ type: "error", text: res.error }); return; }
+      const results = (res as { results: { name: string; decision: string; ok: boolean; error?: string }[] }).results;
+      const okList = results.filter((r) => r.ok).map((r) => `${r.name} (${r.decision === "refund" ? "estornado" : "crédito"})`);
+      const failList = results.filter((r) => !r.ok).map((r) => `${r.name}: ${r.error}`);
+      onDone(failList.length
+        ? { type: "error", text: `Concluídos: ${okList.join(", ") || "nenhum"}. FALHARAM: ${failList.join(" | ")} — tente novamente.` }
+        : { type: "ok", text: `✓ Tudo certo: ${okList.join(", ")}.` });
+    });
+  }
+
+  return (
+    <section className="card space-y-3 border-2 border-[var(--danger)] p-4">
+      <h2 className="font-bold">💰 Pagamentos a decidir ({paid.length})</h2>
+      <p className="text-sm text-[var(--ink-soft)]">
+        Estes jogadores pagaram e ficaram sem a vaga. Escolha para cada um: <b>Estornar</b> (o Pix volta para a conta) ou <b>Crédito</b> (vale um próximo jogo).
+      </p>
+      <ul className="divide-y divide-[var(--line)]">
+        {paid.map((p) => (
+          <li key={p.id} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 truncate font-medium">{p.name}</p>
+            <div className="flex gap-2">
+              {(["refund", "credit"] as const).map((opt) => (
+                <button key={opt} type="button" disabled={pending}
+                  className={`btn btn-sm ${choice[p.id] === opt ? "btn-primary" : "btn-outline"}`}
+                  onClick={() => setChoice({ ...choice, [p.id]: opt })}>
+                  {opt === "refund" ? "💸 Estornar" : "🎫 Crédito"}
+                </button>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className="btn btn-primary btn-sm" disabled={pending || decided.length === 0} onClick={apply}>
+          {pending ? <Spinner size={14} /> : "✓"} Aplicar decisões ({decided.length} de {paid.length})
+        </button>
+        <button className="btn btn-outline btn-sm" type="button" disabled={pending}
+          onClick={() => setChoice(Object.fromEntries(paid.map((p) => [p.id, "refund"] as const)))}>
+          Marcar todos: Estornar
+        </button>
+        <button className="btn btn-outline btn-sm" type="button" disabled={pending}
+          onClick={() => setChoice(Object.fromEntries(paid.map((p) => [p.id, "credit"] as const)))}>
+          Marcar todos: Crédito
+        </button>
+      </div>
+    </section>
   );
 }
 

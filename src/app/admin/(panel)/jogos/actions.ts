@@ -327,6 +327,31 @@ export async function sendTeamsToGroup(gameId: string, teamsPlayerIds: string[][
   return { ok: true };
 }
 
+/**
+ * Decide vários pagamentos de uma vez (jogo cancelado com avulsos pagos):
+ * para cada jogador o admin escolhe estorno ou crédito. Aplica um a um e
+ * devolve o resultado individual — quem falhar fica na tela para nova tentativa.
+ */
+export async function resolvePendingBatch(
+  gameId: string,
+  decisions: { participantId: string; decision: "credit" | "refund" }[]
+) {
+  await requireAdmin();
+  if (!Array.isArray(decisions) || decisions.length === 0) return { error: "Nenhuma decisão selecionada." };
+  const db = supabaseAdmin();
+  const results: { name: string; decision: "credit" | "refund"; ok: boolean; error?: string }[] = [];
+  for (const d of decisions.slice(0, 60)) {
+    const { data: part } = await db.from("game_participants")
+      .select("id, players(name)").eq("id", d.participantId).eq("game_id", gameId).maybeSingle();
+    const name = (part?.players as unknown as { name: string } | null)?.name ?? "?";
+    if (!part) { results.push({ name, decision: d.decision, ok: false, error: "Participação não encontrada." }); continue; }
+    const res = await resolvePendingReview(d.participantId, d.decision);
+    results.push({ name, decision: d.decision, ok: !res?.error, error: res?.error });
+  }
+  revalidatePath(`/admin/jogos/${gameId}`);
+  return { ok: true, results };
+}
+
 export async function resolvePendingReview(participantId: string, decision: "credit" | "refund" | "keep") {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
