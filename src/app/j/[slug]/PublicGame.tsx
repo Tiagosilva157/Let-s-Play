@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
+import PhoneInput, { isCompleteMobile } from "@/components/PhoneInput";
 
 interface Game {
   game_id: string; team_name: string; date: string; time: string; address: string;
@@ -186,9 +187,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
           {step === "phone" && (
             <>
               <label className="text-sm font-medium">Seu WhatsApp</label>
-              <input className="input" type="tel" inputMode="tel" placeholder="(11) 99999-9999"
-                value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus />
-              <button className="btn btn-primary" onClick={requestOtp} disabled={busy || phone.replace(/\D/g, "").length < 10}>
+              <PhoneInput value={phone} onChange={setPhone} autoFocus />
+              <button className="btn btn-primary" onClick={requestOtp} disabled={busy || !isCompleteMobile(phone)}>
                 {busy ? <><Spinner /> Enviando...</> : "Receber código no WhatsApp"}
               </button>
             </>

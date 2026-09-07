@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPlayer, updatePlayer, togglePlayerActive } from "./actions";
 import Spinner from "@/components/Spinner";
+import PhoneInput from "@/components/PhoneInput";
 
 export interface PlayerRow {
   id: string; name: string; phone: string; phoneRaw: string; notes: string;
@@ -59,7 +60,7 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
           <h2 className="font-bold">{editing ? `Editar ${editing.name}` : "Novo jogador"}</h2>
           {error && <p className="rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p>}
           <input name="name" className="input" placeholder="Nome e sobrenome" defaultValue={editing?.name} required />
-          <input name="phone" className="input" type="tel" placeholder="WhatsApp: (11) 99999-9999" defaultValue={editing?.phoneRaw} required />
+          <PhoneInput name="phone" defaultValue={editing?.phoneRaw} required />
           <div className="grid gap-3 sm:grid-cols-2">
             <input name="email" className="input" type="email" placeholder="E-mail (para cobranças)" defaultValue={editing?.email} />
             <input name="cpf_cnpj" className="input" inputMode="numeric" placeholder="CPF (obrigatório p/ cobrar)" defaultValue={editing?.cpfRaw} />

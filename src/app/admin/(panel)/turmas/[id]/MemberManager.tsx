@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addMember, syncTeamMembers, removeMember, activateSubscription, cancelSubscription } from "../actions";
 import Spinner from "@/components/Spinner";
+import PhoneInput from "@/components/PhoneInput";
 
 interface Member { id: string; name: string; phone: string; fee: number; dueDay: number; subscription: string }
 export interface AvailablePlayer { id: string; name: string; phone: string; hasCpf: boolean; isMember: boolean }
@@ -152,7 +153,7 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
       {showForm && (
         <form action={submit} className="mb-4 space-y-3 rounded-xl bg-[var(--bg)] p-4">
           <input name="player_name" className="input" placeholder="Nome do jogador" required />
-          <input name="player_phone" className="input" type="tel" placeholder="WhatsApp: (11) 99999-9999" required />
+          <PhoneInput name="player_phone" required />
           <div className="grid gap-3 sm:grid-cols-2">
             <input name="player_email" className="input" type="email" placeholder="E-mail (para cobranças)" />
             <input name="player_cpf" className="input" inputMode="numeric" placeholder="CPF (obrigatório p/ cobrar)" />
