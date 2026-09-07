@@ -5,7 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { getSessionPlayer } from "@/lib/session";
 import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer, normalizeCpfCnpj, MissingCustomerDataError } from "@/lib/asaas-customer";
-import { enqueueListUpdate, sendPixToPlayer } from "@/lib/messaging";
+import { enqueueListUpdate, sendPixToPlayer, enqueueIndividual } from "@/lib/messaging";
+import { peekCredit, claimCredit } from "@/lib/credits";
 import { processPromotions } from "@/lib/waitlist";
 
 const Body = z.object({
@@ -81,7 +82,12 @@ export async function POST(req: NextRequest) {
       if (cpfInput) p!.cpf_cnpj = cpfInput;
       if (emailInput) p!.email = emailInput;
     }
-    if (!normalizeCpfCnpj(p!.cpf_cnpj)) {
+    const team = game.teams as unknown as { dropin_fee: number; name: string; reservation_minutes: number };
+
+    // crédito disponível cobre a taxa? então nem precisamos de CPF/Pix
+    const credit = await peekCredit(player.id, game.team_id, Number(team.dropin_fee));
+
+    if (!credit && !normalizeCpfCnpj(p!.cpf_cnpj)) {
       return NextResponse.json({ error: "needs_billing_data", needs: ["cpf", "email"] }, { status: 200 });
     }
 
@@ -89,7 +95,23 @@ export async function POST(req: NextRequest) {
     const { data } = await db.rpc("fn_reserve_dropin", { p_game_id: gameId, p_player_id: player.id });
     result = data;
 
-    const team = game.teams as unknown as { dropin_fee: number; name: string; reservation_minutes: number };
+    // 2b. com crédito: confirma direto, sem Pix — consome o crédito
+    if (result?.ok && !result.already_reserved && credit && (await claimCredit(credit.id, gameId))) {
+      await db.from("game_participants")
+        .update({ status: "confirmed", confirmed_at: new Date().toISOString(), source: "system" })
+        .eq("id", result.participant_id as string);
+      await db.from("audit_logs").insert({
+        actor_type: "player", actor_id: player.id, action: "reserve_with_credit",
+        entity: "credits", entity_id: credit.id, after: { gameId, amount: credit.amount },
+      });
+      await enqueueIndividual(game.team_id, p!.phone, [
+        `🎫 ${p!.name.split(" ")[0]}, sua vaga no *${team.name}* de ${game.date.split("-").reverse().join("/")} foi garantida usando seu crédito de R$ ${Number(credit.amount).toFixed(2).replace(".", ",")}.`,
+        ``,
+        `Nada a pagar — presença confirmada! ✅`,
+      ].join("\n")).catch(() => {});
+      await enqueueListUpdate(gameId).catch(() => {});
+      return NextResponse.json({ ok: true, credit_used: true, amount: credit.amount });
+    }
 
     if (result?.ok && !result.already_reserved) {
       try {

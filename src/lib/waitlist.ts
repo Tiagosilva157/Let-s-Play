@@ -74,6 +74,8 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
     };
   });
 
+  const viaCredit = new Set<string>(); // confirmados por crédito: anúncio próprio
+
   for (const p of parts ?? []) {
     const pl = p.players as unknown as {
       id: string; name: string; phone: string;
@@ -81,6 +83,26 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
     };
 
     if (p.kind !== "dropin" || p.status !== "reserved") continue; // mensalista promovido já entra confirmado
+
+    // 0. crédito disponível? confirma direto, sem Pix
+    const { peekCredit, claimCredit } = await import("@/lib/credits");
+    const credit = await peekCredit(pl.id, team.id, Number(team.dropin_fee));
+    if (credit && (await claimCredit(credit.id, gameId))) {
+      viaCredit.add(p.id);
+      await db.from("game_participants")
+        .update({ status: "confirmed", confirmed_at: new Date().toISOString(), source: "system" })
+        .eq("id", p.id);
+      await enqueueIndividual(team.id, pl.phone, [
+        `🎫 ${firstName(pl.name)}, abriu vaga no *${team.name}* de ${fmtDate(game.date)} e ela é sua!`,
+        ``,
+        `Usamos seu crédito de R$ ${Number(credit.amount).toFixed(2).replace(".", ",")} — nada a pagar. Presença confirmada! ✅`,
+      ].join("\n")).catch(() => {});
+      if (team.whatsapp_group_id && team.message_mode !== "manual") {
+        await enqueueGroupMessage(team.id, team.whatsapp_group_id,
+          `🔔 *${firstName(pl.name)}* subiu da lista de espera e usou o crédito que tinha — vaga confirmada!`, gameId).catch(() => {});
+      }
+      continue;
+    }
 
     // 1. tenta gerar a cobrança na hora (precisa de CPF)
     let pixSent = false;
@@ -127,9 +149,10 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
   }
 
   // 3. anuncia no grupo (uma mensagem por movimentação)
-  if (team.whatsapp_group_id && team.message_mode !== "manual" && promoted.length) {
-    const nomes = promoted.map((p) => `*${firstName(p.playerName)}*`).join(", ");
-    const linha = promoted.length === 1
+  const awaitingPay = promoted.filter((p) => !viaCredit.has(p.participantId));
+  if (team.whatsapp_group_id && team.message_mode !== "manual" && awaitingPay.length) {
+    const nomes = awaitingPay.map((p) => `*${firstName(p.playerName)}*`).join(", ");
+    const linha = awaitingPay.length === 1
       ? `🔔 ${nomes} subiu da lista de espera e tem ${team.reservation_minutes ?? 15} minutos para confirmar o pagamento.`
       : `🔔 ${nomes} subiram da lista de espera e têm ${team.reservation_minutes ?? 15} minutos para confirmar o pagamento.`;
     await enqueueGroupMessage(team.id, team.whatsapp_group_id, linha, gameId).catch(() => {});

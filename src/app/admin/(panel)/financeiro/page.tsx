@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import CreditList from "./CreditList";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +19,15 @@ function refMonth(dueDate: string) {
   return m.charAt(0).toUpperCase() + m.slice(1);
 }
 
-export default async function FinancePage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+const TYPE_FILTERS: Record<string, { label: string; value: string }> = {
+  "": { label: "Todas as cobranças", value: "" },
+  subscription: { label: "Mensalidades", value: "subscription" },
+  dropin: { label: "Avulsos", value: "dropin" },
+};
+
+export default async function FinancePage({ searchParams }: { searchParams: Promise<{ status?: string; type?: string }> }) {
   await requireAdmin();
-  const { status } = await searchParams;
+  const { status, type } = await searchParams;
   const db = supabaseAdmin();
 
   let query = db
@@ -29,7 +36,24 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     .order("created_at", { ascending: false })
     .limit(100);
   if (status) query = query.eq("status", status);
+  if (type && TYPE_FILTERS[type]) query = query.eq("type", type);
   const { data: charges } = await query;
+
+  const { data: creditRows } = await db
+    .from("credits")
+    .select("id, amount, status, reason, created_at, players(name), teams(name), games:used_game_id(date)")
+    .order("created_at", { ascending: false })
+    .limit(60);
+  const credits = (creditRows ?? []).map((c) => ({
+    id: c.id,
+    playerName: (c.players as unknown as { name: string })?.name ?? "?",
+    teamName: (c.teams as unknown as { name: string })?.name ?? "?",
+    amount: Number(c.amount),
+    status: c.status,
+    reason: c.reason ?? "",
+    createdAt: c.created_at,
+    usedGameDate: (c.games as unknown as { date: string } | null)?.date ?? null,
+  }));
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString();
   const { data: recent } = await db
@@ -57,8 +81,17 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="flex gap-1 overflow-x-auto">
+        {Object.values(TYPE_FILTERS).map((t) => (
+          <a key={t.value} href={`?${new URLSearchParams({ ...(status ? { status } : {}), ...(t.value ? { type: t.value } : {}) })}`}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${(type ?? "") === t.value ? "bg-[var(--brand)] text-white" : "text-[var(--ink-soft)]"}`}>
+            {t.label}
+          </a>
+        ))}
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto">
         {filters.map((f) => (
-          <a key={f} href={f ? `?status=${f}` : "?"}
+          <a key={f} href={`?${new URLSearchParams({ ...(f ? { status: f } : {}), ...(type ? { type } : {}) })}`}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium ${status === f || (!status && !f) ? "bg-[var(--brand)] text-white" : "text-[var(--ink-soft)]"}`}>
             {f ? STATUS_LABEL[f].label : "Todas"}
           </a>
@@ -85,6 +118,8 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
         })}
         {(charges ?? []).length === 0 && <p className="p-4 text-sm text-[var(--ink-soft)]">Nenhuma cobrança.</p>}
       </div>
+
+      <CreditList credits={credits} />
     </div>
   );
 }
