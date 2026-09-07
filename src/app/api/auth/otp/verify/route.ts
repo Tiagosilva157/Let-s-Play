@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { normalizePhone } from "@/lib/phone";
+import { normalizePhone, phoneVariants } from "@/lib/phone";
 import { createPlayerSession } from "@/lib/session";
 
 const Body = z.object({
@@ -38,8 +38,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "wrong_code" }, { status: 400 });
   }
 
-  // busca ou cria jogador
-  let { data: player } = await db.from("players").select("id, name, active").eq("phone", phone).maybeSingle();
+  // busca ou cria jogador — procura também a variação com/sem o nono dígito,
+  // para não duplicar quem foi cadastrado no formato antigo (caso Charles)
+  const variants = phoneVariants(phone);
+  const { data: matches } = await db.from("players").select("id, name, active, phone").in("phone", variants);
+  let player = (matches ?? []).find((p) => p.phone === phone) ?? (matches ?? [])[0] ?? null;
+  if (player && player.phone !== phone && phone.length === 13) {
+    // aproveita para corrigir o cadastro antigo para o formato completo
+    await db.from("players").update({ phone }).eq("id", player.id);
+  }
   if (!player) {
     // primeira vez: pedimos o nome SEM consumir o código — ele será
     // verificado de novo na próxima chamada, já com o nome preenchido
@@ -47,7 +54,7 @@ export async function POST(req: NextRequest) {
     const { data: created, error } = await db
       .from("players")
       .insert({ name: parsed.data.name.trim(), phone })
-      .select("id, name, active")
+      .select("id, name, active, phone")
       .single();
     if (error) return NextResponse.json({ error: "internal" }, { status: 500 });
     player = created;
