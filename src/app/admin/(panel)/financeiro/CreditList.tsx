@@ -27,7 +27,18 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
   const [onlyAvailable, setOnlyAvailable] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  if (credits.length === 0) return null;
+  if (credits.length === 0) {
+    return (
+      <section className="card p-4">
+        <h2 className="font-bold">🎫 Créditos de jogadores</h2>
+        <p className="mt-2 text-sm text-[var(--ink-soft)]">
+          Nenhum crédito registrado ainda. Créditos aparecem aqui automaticamente quando um não mensalista
+          <b> desiste dentro do prazo já tendo pago</b>, ou quando você escolhe <b>Crédito</b> para um pagamento
+          sem vaga / jogo cancelado. Cada crédito mostra o jogador, o jogo de origem e permite devolver em dinheiro.
+        </p>
+      </section>
+    );
+  }
 
   // resumo por jogador (só o que está em aberto)
   const byPlayer = new Map<string, { count: number; total: number }>();
