@@ -71,9 +71,25 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
   const filters = ["", "pending", "overdue", "received", "refunded"];
 
+  // espelho do saldo no Asaas — se a consulta falhar, a página continua funcionando
+  const { Asaas } = await import("@/lib/asaas");
+  const { getAsaasConfig } = await import("@/lib/settings");
+  const asaasEnv = (await getAsaasConfig()).env;
+  const balance = await Asaas.getBalance().then((b) => Number(b.balance)).catch(() => null);
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Financeiro</h1>
+
+      <div className="card p-4">
+        <p className="text-2xl font-bold text-[var(--brand)]">
+          {balance == null ? "—" : `R$ ${balance.toFixed(2)}`}
+        </p>
+        <p className="text-sm text-[var(--ink-soft)]">
+          Saldo Atual no Asaas{asaasEnv === "sandbox" ? " (sandbox)" : ""}
+          {balance == null && " · indisponível agora (verifique a chave em Configurações)"}
+        </p>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="card p-4">

@@ -66,6 +66,9 @@ export const Asaas = {
 
   getPayment: (paymentId: string) => asaas<AsaasPayment>(`/payments/${paymentId}`),
 
+  /** Saldo atual da conta Asaas (espelho, somente leitura). */
+  getBalance: () => asaas<{ balance: number }>("/finance/balance"),
+
   cancelPayment: (paymentId: string) =>
     asaas<{ deleted: boolean }>(`/payments/${paymentId}`, { method: "DELETE" }),
 
