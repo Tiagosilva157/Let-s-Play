@@ -24,9 +24,11 @@ export async function register() {
 
     let lastDaily = "";
     const daily = () => {
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      if (now.getHours() >= 6 && lastDaily !== today) {
+      // horário de Brasília (o container roda em UTC: 06h UTC seriam 03h aqui)
+      const tz = "America/Sao_Paulo";
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+      const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(new Date()));
+      if (hour >= 6 && lastDaily !== today) {
         lastDaily = today;
         call("/api/cron/daily");
       }

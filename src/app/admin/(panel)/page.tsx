@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { todayBR } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   await requireAdmin();
   const db = supabaseAdmin();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBR();
 
   const [teams, games, overdue, pendingReview, failedMsgs] = await Promise.all([
     db.from("teams").select("id", { count: "exact", head: true }).eq("status", "active"),

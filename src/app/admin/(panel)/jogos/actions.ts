@@ -111,10 +111,17 @@ export async function cancelGame(gameId: string, reason: string) {
 
   const built = await buildListMessage(gameId);
   if (built?.team.whatsapp_group_id) {
+    // jogo que já deveria ter acontecido: registro após o fato, texto diferente
+    const { gameStart } = await import("@/lib/dates");
+    const { data: g } = await db.from("games").select("date, time").eq("id", gameId).single();
+    const already = g ? gameStart(g.date, String(g.time)) < new Date() : false;
+    const dateBR = g ? g.date.split("-").reverse().slice(0, 2).join("/") : "";
     await enqueueGroupMessage(
       built.team.id,
       built.team.whatsapp_group_id,
-      `🚫 *Jogo cancelado*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`,
+      already
+        ? `🚫 *O jogo de ${dateBR} foi registrado como cancelado (não aconteceu)*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`
+        : `🚫 *Jogo cancelado*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`,
       gameId
     ).catch((e) => console.error("[whatsapp] cancelamento:", e));
   }

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { getSessionPlayer } from "@/lib/session";
+import { todayBR } from "@/lib/dates";
 import { notFound } from "next/navigation";
 import PublicGame from "./PublicGame";
 
@@ -14,7 +15,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
     .from("public_game_view")
     .select("*")
     .eq("slug", slug)
-    .gte("date", new Date().toISOString().slice(0, 10))
+    .gte("date", todayBR())
     .order("date", { ascending: true })
     .limit(1)
     .maybeSingle();
