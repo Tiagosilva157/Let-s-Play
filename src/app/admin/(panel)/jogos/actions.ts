@@ -105,23 +105,54 @@ export async function cancelGame(gameId: string, reason: string) {
   await db.from("games").update({ status: "canceled", cancel_reason: reason || null }).eq("id", gameId);
   await auditAdmin(admin.id, "cancel_game", "games", gameId, { reason });
 
-  // avulsos pagos ficam em pending_review para decisão de crédito/estorno
-  await db.from("game_participants").update({ status: "pending_review" })
+  const { data: g } = await db.from("games").select("date, time, team_id, teams(name)").eq("id", gameId).single();
+  const dateBR = g ? g.date.split("-").reverse().slice(0, 2).join("/") : "";
+  const teamName = (g?.teams as unknown as { name: string } | null)?.name ?? "";
+
+  // avulsos pagos: o valor vira CRÉDITO na hora (o admin ainda pode devolver em
+  // dinheiro caso a caso). Cada um é avisado no privado.
+  const { data: paidDropins } = await db.from("game_participants")
+    .select("id, player_id, charges(id, amount, status), players(name, phone)")
     .eq("game_id", gameId).eq("kind", "dropin").eq("status", "confirmed");
+  const { grantCreditForCharge } = await import("@/lib/credits");
+  const { enqueueIndividual } = await import("@/lib/messaging");
+  let credited = 0;
+  for (const p of paidDropins ?? []) {
+    const ch = p.charges as unknown as { id: string; amount: number; status: string } | null;
+    const pl = p.players as unknown as { name: string; phone: string };
+    await db.from("game_participants").update({ status: "pending_review" }).eq("id", p.id);
+    if (!ch || !["received", "confirmed"].includes(ch.status)) continue;
+    try {
+      const c = await grantCreditForCharge({
+        playerId: p.player_id, teamId: g!.team_id, amount: Number(ch.amount), chargeId: ch.id,
+        reason: `Jogo cancelado — ${dateBR}`, createdBy: admin.id,
+      });
+      if (c.created) {
+        credited++;
+        await enqueueIndividual(g!.team_id, pl.phone, [
+          `🚫 ${pl.name.split(" ")[0]}, o jogo do *${teamName}* de ${dateBR} foi cancelado${reason ? ` (${reason})` : ""}.`,
+          ``,
+          `Os *R$ ${Number(ch.amount).toFixed(2).replace(".", ",")}* que você pagou viraram *crédito*: na próxima vez que garantir vaga pelo link, sua presença é confirmada sem pagar de novo. 🎫`,
+        ].join("\n")).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[credit] cancelamento:", String(e).slice(0, 150));
+    }
+  }
+  await auditAdmin(admin.id, "cancel_game_credits", "games", gameId, { credited });
 
   const built = await buildListMessage(gameId);
   if (built?.team.whatsapp_group_id) {
     // jogo que já deveria ter acontecido: registro após o fato, texto diferente
     const { gameStart } = await import("@/lib/dates");
-    const { data: g } = await db.from("games").select("date, time").eq("id", gameId).single();
     const already = g ? gameStart(g.date, String(g.time)) < new Date() : false;
-    const dateBR = g ? g.date.split("-").reverse().slice(0, 2).join("/") : "";
+    const head = already
+      ? `🚫 *O jogo de ${dateBR} foi registrado como cancelado (não aconteceu)*${reason ? ` — ${reason}` : ""}`
+      : `🚫 *Jogo de ${dateBR} cancelado*${reason ? ` — ${reason}` : ""}`;
     await enqueueGroupMessage(
       built.team.id,
       built.team.whatsapp_group_id,
-      already
-        ? `🚫 *O jogo de ${dateBR} foi registrado como cancelado (não aconteceu)*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`
-        : `🚫 *Jogo cancelado*${reason ? ` — ${reason}` : ""}\nQuem já pagou será atendido pelo organizador (crédito ou estorno).`,
+      `${head}\n\n🎫 *Não mensalistas que já pagaram:* o valor virou *crédito* e será usado automaticamente na próxima vaga que garantirem pelo link — sem pagar de novo.`,
       gameId
     ).catch((e) => console.error("[whatsapp] cancelamento:", e));
   }
@@ -372,10 +403,25 @@ export async function resolvePendingReview(participantId: string, decision: "cre
 
   if (decision === "credit" && charge) {
     // idempotente: a mesma cobrança nunca gera dois créditos
-    await grantCreditForCharge({
+    const { data: gm } = await db.from("games").select("date, teams(name)").eq("id", part.game_id).single();
+    const dateBR = gm ? gm.date.split("-").reverse().slice(0, 2).join("/") : "";
+    const teamName = (gm?.teams as unknown as { name: string } | null)?.name ?? "";
+    const c = await grantCreditForCharge({
       playerId: part.player_id, teamId: charge.team_id, amount: Number(charge.amount), chargeId: charge.id,
-      reason: "Pagamento sem vaga / jogo cancelado", createdBy: admin.id,
+      reason: `Pagamento sem vaga / jogo cancelado — ${dateBR}`, createdBy: admin.id,
     });
+    // avisa o jogador no WhatsApp (só na primeira concessão)
+    if (c.created) {
+      const { data: pl } = await db.from("players").select("name, phone").eq("id", part.player_id).single();
+      if (pl) {
+        const { enqueueIndividual } = await import("@/lib/messaging");
+        await enqueueIndividual(charge.team_id, pl.phone, [
+          `🎫 ${pl.name.split(" ")[0]}, os *R$ ${Number(charge.amount).toFixed(2).replace(".", ",")}* que você pagou pelo jogo do *${teamName}* de ${dateBR} viraram *crédito*.`,
+          ``,
+          `Na próxima vez que garantir vaga pelo link, sua presença é confirmada sem pagar de novo.`,
+        ].join("\n")).catch(() => {});
+      }
+    }
     // quem desistiu pode voltar usando o crédito; quem pagou sem vaga sai da lista
     if (part.status === "pending_review") {
       await db.from("game_participants").update({ status: "removed" }).eq("id", participantId);
