@@ -71,6 +71,31 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
   const filters = ["", "pending", "overdue", "received", "refunded"];
 
+  // vagas pagas com crédito: entram na lista como linhas informativas, para o
+  // jogo em que o crédito foi usado "fechar a conta" (o dinheiro entrou no jogo de origem)
+  type Row =
+    | { kind: "charge"; id: string; at: string; charge: NonNullable<typeof charges>[number] }
+    | { kind: "credit_use"; id: string; at: string; playerName: string; teamName: string; amount: number; usedGameDate: string; originGameDate: string | null };
+  const showCreditUses = (!type || type === "dropin") && (!status || status === "received");
+  const { data: usedCredits } = showCreditUses
+    ? await db.from("credits")
+        .select("id, amount, used_at, players(name), teams(name), games:used_game_id(date), origin:origin_charge_id(games(date))")
+        .eq("status", "used").not("used_game_id", "is", null)
+        .order("used_at", { ascending: false }).limit(100)
+    : { data: [] };
+  const rows: Row[] = [
+    ...(charges ?? []).map((c) => ({ kind: "charge" as const, id: c.id, at: c.created_at as string, charge: c })),
+    ...(usedCredits ?? []).map((u) => ({
+      kind: "credit_use" as const, id: "credit:" + u.id, at: (u.used_at as string) ?? "",
+      playerName: (u.players as unknown as { name: string })?.name ?? "?",
+      teamName: (u.teams as unknown as { name: string })?.name ?? "?",
+      amount: Number(u.amount),
+      usedGameDate: (u.games as unknown as { date: string })?.date ?? "",
+      originGameDate: (u.origin as unknown as { games: { date: string } | null } | null)?.games?.date ?? null,
+    })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  const fmtDay = (d: string) => d ? new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR") : "";
+
   // espelho do saldo no Asaas — se a consulta falhar, a página continua funcionando
   const { Asaas } = await import("@/lib/asaas");
   const { getAsaasConfig } = await import("@/lib/settings");
@@ -121,14 +146,31 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="card divide-y divide-[var(--line)]">
-        {(charges ?? []).map((c) => {
+        {rows.map((r) => {
+          if (r.kind === "credit_use") {
+            return (
+              <div key={r.id} className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium">{r.playerName}</p>
+                  <p className="text-sm text-[var(--ink-soft)]">
+                    {r.teamName} · Avulso — {fmtDay(r.usedGameDate)} · pago com crédito{r.originGameDate ? ` do jogo de ${fmtDay(r.originGameDate)}` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">R$ {r.amount.toFixed(2)}</span>
+                  <span className="badge badge-neutral" title="Vaga paga com crédito — o dinheiro entrou no jogo de origem">🎫 Crédito</span>
+                </div>
+              </div>
+            );
+          }
+          const c = r.charge;
           const st = STATUS_LABEL[c.status] ?? { label: c.status, cls: "badge-neutral" };
           return (
             <div key={c.id} className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-medium">{(c.players as unknown as { name: string })?.name}</p>
                 <p className="text-sm text-[var(--ink-soft)]">
-                  {(c.teams as unknown as { name: string })?.name} · {c.type === "dropin" ? `Avulso ${(c.games as unknown as { date: string })?.date ? "— " + new Date(`${(c.games as unknown as { date: string }).date}T12:00:00`).toLocaleDateString("pt-BR") : ""}` : `Mensalidade${c.due_date ? ` — ${refMonth(c.due_date)} · vence ${new Date(`${c.due_date}T12:00:00`).toLocaleDateString("pt-BR")}` : ""}`}
+                  {(c.teams as unknown as { name: string })?.name} · {c.type === "dropin" ? `Avulso ${(c.games as unknown as { date: string })?.date ? "— " + fmtDay((c.games as unknown as { date: string }).date) : ""}` : `Mensalidade${c.due_date ? ` — ${refMonth(c.due_date)} · vence ${fmtDay(c.due_date)}` : ""}`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -138,7 +180,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
             </div>
           );
         })}
-        {(charges ?? []).length === 0 && <p className="p-4 text-sm text-[var(--ink-soft)]">Nenhuma cobrança.</p>}
+        {rows.length === 0 && <p className="p-4 text-sm text-[var(--ink-soft)]">Nenhuma cobrança.</p>}
       </div>
 
       <CreditList credits={credits} />
