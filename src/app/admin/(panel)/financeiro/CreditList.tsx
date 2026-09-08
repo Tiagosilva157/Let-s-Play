@@ -25,6 +25,7 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [onlyAvailable, setOnlyAvailable] = useState(true);
+  const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   if (credits.length === 0) {
@@ -49,7 +50,9 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
   }
   const availableTotal = [...byPlayer.values()].reduce((s, v) => s + v.total, 0);
 
+  const q = search.trim().toLowerCase();
   const shown = (onlyAvailable ? credits.filter((c) => c.status === "available") : credits)
+    .filter((c) => !q || c.playerName.toLowerCase().includes(q))
     .slice()
     .sort((a, b) => a.playerName.localeCompare(b.playerName, "pt-BR") || b.createdAt.localeCompare(a.createdAt));
 
@@ -94,12 +97,17 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
         </p>
       )}
 
-      <label className="mb-2 flex items-center gap-2 text-sm">
-        <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
-        Mostrar só os disponíveis
-      </label>
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input className="input sm:flex-1" placeholder="🔍 Filtrar por nome do jogador"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
+        <label className="flex shrink-0 items-center gap-2 text-sm">
+          <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
+          Só disponíveis
+        </label>
+      </div>
+      <p className="mb-1 text-xs text-[var(--ink-soft)]">{shown.length} {shown.length === 1 ? "crédito" : "créditos"}</p>
 
-      <ul className="divide-y divide-[var(--line)]">
+      <ul className="max-h-96 divide-y divide-[var(--line)] overflow-y-auto rounded-lg border border-[var(--line)] px-3">
         {shown.map((c) => {
           const st = CREDIT_LABEL[c.status] ?? { label: c.status, cls: "badge-neutral" };
           const busy = pending && busyId === c.id;
@@ -139,7 +147,11 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
             </li>
           );
         })}
-        {shown.length === 0 && <li className="py-2 text-sm text-[var(--ink-soft)]">Nenhum crédito disponível no momento.</li>}
+        {shown.length === 0 && (
+          <li className="py-2 text-sm text-[var(--ink-soft)]">
+            {q ? `Nenhum crédito para "${search.trim()}".` : "Nenhum crédito disponível no momento."}
+          </li>
+        )}
       </ul>
     </section>
   );
