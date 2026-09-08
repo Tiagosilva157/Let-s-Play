@@ -9,6 +9,7 @@ interface Participant {
   id: string; playerId: string; name: string; phone: string;
   kind: "member" | "dropin"; status: string; chargeStatus: string | null;
   hasCredit?: boolean; // o pagamento já virou crédito (não precisa decidir)
+  creditRefundable?: boolean; // false = desistência após o prazo (crédito sem devolução em dinheiro)
 }
 interface Game {
   id: string; teamName: string; date: string; time: string; status: string;
@@ -184,11 +185,15 @@ export default function GameManager({ game, participants, addable = [], splitter
             <Row key={p.id} p={p} pending={pending}
               actions={
                 p.status === "withdrawn" && p.hasCredit ? (
-                  // já virou crédito automaticamente; o admin ainda pode devolver em dinheiro
-                  <button className="btn btn-outline btn-sm" title="Devolve o Pix pelo Asaas e cancela o crédito"
-                    onClick={() => { if (confirm(`Estornar em dinheiro para ${p.name}? O crédito dele deixa de valer.`)) run(() => resolvePendingReview(p.id, "refund"), "Estorno concluído."); }}>
-                    Estornar em dinheiro
-                  </button>
+                  // já virou crédito automaticamente; dentro do prazo o admin ainda pode devolver em dinheiro
+                  p.creditRefundable ? (
+                    <button className="btn btn-outline btn-sm" title="Devolve o Pix pelo Asaas e cancela o crédito"
+                      onClick={() => { if (confirm(`Estornar em dinheiro para ${p.name}? O crédito dele deixa de valer.`)) run(() => resolvePendingReview(p.id, "refund"), "Estorno concluído."); }}>
+                      Estornar em dinheiro
+                    </button>
+                  ) : (
+                    <span className="text-xs text-[var(--ink-soft)]" title="Desistiu após o prazo: vale só como crédito">só crédito (após o prazo)</span>
+                  )
                 ) : p.status === "pending_review" ||
                 (p.status === "withdrawn" && ["received", "confirmed"].includes(p.chargeStatus ?? "")) ? (
                   <div className="flex gap-1">

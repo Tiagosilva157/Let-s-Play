@@ -41,7 +41,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
   const { data: creditRows } = await db
     .from("credits")
-    .select("id, amount, status, reason, created_at, players(name), teams(name), games:used_game_id(date), origin:origin_charge_id(asaas_payment_id, games(date))")
+    .select("id, amount, status, reason, refundable, created_at, players(name), teams(name), games:used_game_id(date), origin:origin_charge_id(asaas_payment_id, games(date))")
     .order("created_at", { ascending: false })
     .limit(100);
   const credits = (creditRows ?? []).map((c) => {
@@ -56,7 +56,8 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       createdAt: c.created_at,
       usedGameDate: (c.games as unknown as { date: string } | null)?.date ?? null,
       originGameDate: origin?.games?.date ?? null,
-      refundable: !!origin?.asaas_payment_id,
+      // desistência após o prazo: crédito vale, mas não vira dinheiro
+      refundable: !!origin?.asaas_payment_id && c.refundable !== false,
     };
   });
 

@@ -60,7 +60,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     full: "A lista está cheia.",
     promotion_expired: "Você subiu da lista de espera mas o prazo de pagamento terminou, então a vaga passou para o próximo. Não é possível entrar novamente neste jogo.",
     deadline_passed: "O prazo de confirmação já passou.",
-    withdraw_deadline_passed: "O prazo para desistir já passou. O valor do dia continua devido.",
+    withdraw_deadline_passed: "O prazo para desistir já passou. Atualize a página e tente novamente.",
     list_not_open: "A lista ainda não está aberta.",
     wrong_code: "Código incorreto. Tente novamente.",
     code_expired: "Código expirado. Peça um novo.",
@@ -156,7 +156,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     if (data.waitlisted) { refresh(); return; }
     if (data.pix) { setPix(data.pix); setStep("idle"); return; }
     if (data.credit_granted) {
-      setIntentNote(`✅ Desistência registrada. Os ${fmtMoney(Number(data.credit_amount))} que você pagou viraram crédito — na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo.`);
+      setIntentNote(data.credit_late
+        ? `✅ Desistência registrada após o prazo. Os ${fmtMoney(Number(data.credit_amount))} pagos viraram crédito (sem devolução em dinheiro) — na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo.`
+        : `✅ Desistência registrada. Os ${fmtMoney(Number(data.credit_amount))} que você pagou viraram crédito — na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo.`);
+    } else if (data.late) {
+      setIntentNote("✅ Registrado: você avisou que não vem. Sua vaga foi liberada para outra pessoa.");
     }
     if (data.credit_used) {
       setIntentNote(`🎫 Vaga garantida usando seu crédito de ${fmtMoney(Number(data.amount))} — nada a pagar!`);
@@ -309,22 +313,24 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                   <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm font-semibold text-[var(--success)]">
                     ✓ Você está confirmado{myStatus.kind === "dropin" ? " (pago)" : ""}!
                   </p>
-                  {withdrawOpen ? (
-                    <>
-                      <button className="btn btn-danger-soft" onClick={() => doAction(isMember ? "decline" : "withdraw")} disabled={busy}>
-                        {busy && <Spinner />} Desistir da vaga
-                      </button>
-                      <p className="text-xs text-center text-[var(--ink-soft)]">
-                        Você pode desistir até {withdrawDeadline}
-                        {myStatus.kind === "dropin" && " — desistindo no prazo, o valor pago vira crédito para o próximo jogo"}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm text-[var(--warn)]">
-                      O período para desistência encerrou em {withdrawDeadline}. Sua presença permanece confirmada
-                      {myStatus.kind === "dropin" ? " e o valor do jogo continua devido" : ""}.
-                    </p>
-                  )}
+                  {/* o botão fica SEMPRE disponível; depois do prazo, avisa e o valor vira crédito (sem dinheiro) */}
+                  <button className="btn btn-danger-soft" disabled={busy}
+                    onClick={() => {
+                      if (!withdrawOpen) {
+                        const msg = myStatus.kind === "dropin"
+                          ? `O prazo para desistir terminou em ${withdrawDeadline}.\n\nVocê ainda pode desistir: sua vaga será liberada e o valor pago (${fmtMoney(Number(game.dropin_fee))}) vira CRÉDITO para o próximo jogo — sem devolução em dinheiro.\n\nConfirmar a desistência?`
+                          : `O prazo para desistir terminou em ${withdrawDeadline}.\n\nVocê ainda pode avisar que não vem — sua vaga será liberada para outra pessoa.\n\nConfirmar?`;
+                        if (!confirm(msg)) return;
+                      }
+                      doAction(isMember ? "decline" : "withdraw");
+                    }}>
+                    {busy && <Spinner />} Desistir da vaga
+                  </button>
+                  <p className="text-xs text-center text-[var(--ink-soft)]">
+                    {withdrawOpen
+                      ? <>Você pode desistir até {withdrawDeadline}{myStatus.kind === "dropin" && " — desistindo no prazo, o valor pago vira crédito para o próximo jogo"}</>
+                      : <>O prazo ({withdrawDeadline}) já passou{myStatus.kind === "dropin" ? " — desistindo agora, o valor pago vira crédito (sem devolução em dinheiro)" : " — mas você ainda pode avisar que não vem"}</>}
+                  </p>
                 </>
               )}
 

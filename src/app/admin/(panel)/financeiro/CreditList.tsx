@@ -125,6 +125,9 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
                       act(c.id, () => refundCreditInCash(c.id), "Estorno concluído — o crédito foi cancelado.");
                     }}>{busy ? <Spinner size={14} /> : "💸"} Estornar em dinheiro</button>
                 )}
+                {c.status === "available" && !c.refundable && (
+                  <span className="text-xs text-[var(--ink-soft)]" title="Desistência após o prazo: vale só como crédito">só crédito</span>
+                )}
                 {c.status === "available" && (
                   <button className="btn btn-outline btn-sm" disabled={pending}
                     onClick={() => {

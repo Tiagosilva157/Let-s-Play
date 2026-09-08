@@ -77,18 +77,25 @@ export async function POST(req: NextRequest) {
       if (paid) {
         const teamInfo = game.teams as unknown as { name: string };
         const { data: pl } = await db.from("players").select("name, phone").eq("id", player.id).single();
+        const late = result.late === true; // depois do prazo: crédito sim, dinheiro não
+        const dateBR = game.date.split("-").reverse().join("/");
+        const amountBR = `R$ ${Number(paid.amount).toFixed(2).replace(".", ",")}`;
         try {
           const credit = await grantCreditForCharge({
             playerId: player.id, teamId: game.team_id, amount: Number(paid.amount), chargeId: paid.id,
-            reason: `Desistência dentro do prazo — jogo ${game.date.split("-").reverse().join("/")}`,
+            reason: late ? `Desistência APÓS o prazo — jogo ${dateBR}` : `Desistência dentro do prazo — jogo ${dateBR}`,
+            refundable: !late,
           });
           result.credit_granted = true;
           result.credit_amount = Number(paid.amount);
+          result.credit_late = late;
           if (credit.created && pl) {
             await enqueueIndividual(game.team_id, pl.phone, [
-              `✅ ${pl.name.split(" ")[0]}, sua desistência do *${teamInfo.name}* de ${game.date.split("-").reverse().join("/")} foi registrada.`,
+              `✅ ${pl.name.split(" ")[0]}, sua desistência do *${teamInfo.name}* de ${dateBR} foi registrada${late ? " (após o prazo)" : ""}.`,
               ``,
-              `Os *R$ ${Number(paid.amount).toFixed(2).replace(".", ",")}* que você pagou viraram *crédito*: na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo. 🎫`,
+              late
+                ? `Como o prazo de desistência já tinha passado, os *${amountBR}* pagos viram *crédito* (sem devolução em dinheiro): na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo. 🎫`
+                : `Os *${amountBR}* que você pagou viraram *crédito*: na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo. 🎫`,
             ].join("\n")).catch(() => {});
           }
         } catch (e) {

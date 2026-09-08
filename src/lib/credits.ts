@@ -27,6 +27,8 @@ export async function peekCredit(playerId: string, teamId: string, fee: number):
  */
 export async function grantCreditForCharge(opts: {
   playerId: string; teamId: string; amount: number; chargeId: string; reason: string; createdBy?: string | null;
+  /** false = desistência após o prazo: vale como crédito, mas não pode virar dinheiro */
+  refundable?: boolean;
 }): Promise<{ id: string; created: boolean }> {
   const db = supabaseAdmin();
   const { data: existing } = await db.from("credits").select("id").eq("origin_charge_id", opts.chargeId).neq("status", "revoked").limit(1).maybeSingle();
@@ -34,6 +36,7 @@ export async function grantCreditForCharge(opts: {
   const { data, error } = await db.from("credits").insert({
     player_id: opts.playerId, team_id: opts.teamId, amount: opts.amount,
     origin_charge_id: opts.chargeId, reason: opts.reason, created_by: opts.createdBy ?? null,
+    refundable: opts.refundable ?? true,
   }).select("id").single();
   if (error || !data) throw new Error(error?.message ?? "falha ao criar crédito");
   return { id: data.id, created: true };

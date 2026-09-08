@@ -30,9 +30,9 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
   // cobranças que já viraram crédito (desistência no prazo / decisão do admin)
   const chargeIds = (parts ?? []).map((p) => (p.charges as unknown as { id: string } | null)?.id).filter(Boolean) as string[];
   const { data: creditRows } = chargeIds.length
-    ? await db.from("credits").select("origin_charge_id").in("origin_charge_id", chargeIds).neq("status", "revoked")
-    : { data: [] as { origin_charge_id: string }[] };
-  const creditedCharges = new Set((creditRows ?? []).map((c) => c.origin_charge_id));
+    ? await db.from("credits").select("origin_charge_id, refundable").in("origin_charge_id", chargeIds).neq("status", "revoked")
+    : { data: [] as { origin_charge_id: string; refundable: boolean }[] };
+  const creditedCharges = new Map((creditRows ?? []).map((c) => [c.origin_charge_id, c.refundable !== false]));
 
   const participants = (parts ?? []).map((p) => {
     const ch = p.charges as unknown as { id: string; status: string } | null;
@@ -45,6 +45,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
       status: p.status,
       chargeStatus: ch?.status ?? null,
       hasCredit: !!ch && creditedCharges.has(ch.id),
+      creditRefundable: !!ch && creditedCharges.get(ch.id) === true,
     };
   });
 

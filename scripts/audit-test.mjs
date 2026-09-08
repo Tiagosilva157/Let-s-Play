@@ -87,12 +87,13 @@ console.log("\n7. Desistência dentro do prazo");
 const w1 = await db.rpc("fn_withdraw_dropin", { p_game_id: game.id, p_player_id: players[2].id });
 check("avulso confirmado desiste no prazo", w1.data?.ok === true);
 
-console.log("\n8. Desistência fora do prazo é bloqueada");
+console.log("\n8. Desistência fora do prazo é permitida e marcada como tardia (vira crédito sem dinheiro)");
 await db.from("games").update({ withdraw_until: new Date(Date.now() - 60e3).toISOString() }).eq("id", game.id);
 // recoloca um confirmado para testar
 await db.from("game_participants").update({ status: "confirmed" }).eq("game_id", game.id).eq("player_id", players[2].id);
 const w2 = await db.rpc("fn_withdraw_dropin", { p_game_id: game.id, p_player_id: players[2].id });
-check("bloqueada com 'withdraw_deadline_passed'", w2.data?.error === "withdraw_deadline_passed", JSON.stringify(w2.data));
+check("permitida com late=true", w2.data?.ok === true && w2.data?.late === true, JSON.stringify(w2.data));
+check("desistência no prazo não é tardia (late=false)", w1.data?.late === false, JSON.stringify(w1.data));
 
 console.log("\n9. Pagamento chegando com lista cheia → pending_review");
 // enche a lista de novo e simula pagamento de quem está fora
