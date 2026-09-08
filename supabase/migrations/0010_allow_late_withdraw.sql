@@ -1,1 +1,0 @@
--- Migration cancelada / revertida. Este arquivo não faz nenhuma alteração.
