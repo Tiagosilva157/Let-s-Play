@@ -47,9 +47,14 @@ export async function ensureAsaasCustomer(player: PlayerContact): Promise<string
   };
 
   if (player.asaas_customer_id) {
-    // mantém os dados sincronizados (troca de telefone, e-mail, etc.)
-    await Asaas.updateCustomer(player.asaas_customer_id, payload).catch(() => {});
-    return player.asaas_customer_id;
+    // mantém os dados sincronizados (troca de telefone, e-mail, etc.).
+    // Se o ID gravado não existe neste ambiente (ex.: cliente criado no
+    // sandbox e agora estamos em produção), descartamos e criamos de novo.
+    const ok = await Asaas.updateCustomer(player.asaas_customer_id, payload).then(() => true).catch(() => false);
+    if (ok) return player.asaas_customer_id;
+    const exists = await Asaas.getCustomer(player.asaas_customer_id).then(() => true).catch(() => false);
+    if (exists) return player.asaas_customer_id;
+    console.warn(`[asaas] cliente ${player.asaas_customer_id} inválido neste ambiente — recriando`);
   }
 
   const customer = await Asaas.createCustomer(payload);
