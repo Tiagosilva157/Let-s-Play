@@ -208,6 +208,22 @@ export async function processExpirations(expired: ExpiredRow[] | null | undefine
           row.game_id
         ).catch(() => {});
       }
+    } else {
+      // reserva comum que venceu: avisa que a vaga voltou e que pode tentar de novo
+      const link = publicLink(team.slug);
+      await enqueueIndividual(team.id, pl.phone, [
+        `⏰ ${firstName(pl.name)}, o prazo de 15 minutos para pagar sua vaga no *${team.name}* terminou e a reserva foi cancelada.`,
+        ``,
+        `Se ainda quiser jogar, é só entrar de novo pelo link — se houver vaga, um novo Pix é gerado na hora.`,
+        link ? `👉 ${link}` : ``,
+      ].filter(Boolean).join("\n")).catch(() => {});
     }
+  }
+
+  // o grupo precisa ver a vaga liberada mesmo quando ninguém sobe da fila
+  // (quando alguém sobe, processPromotions já reenvia a lista)
+  const gameIds = [...new Set(rows.map((r) => r.game_id))];
+  for (const gameId of gameIds) {
+    await enqueueListUpdate(gameId).catch(() => {});
   }
 }
