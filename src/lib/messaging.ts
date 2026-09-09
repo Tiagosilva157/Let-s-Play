@@ -315,27 +315,34 @@ export async function sendPaymentConfirmed(teamId: string, phone: string, player
 }
 
 /**
- * Lembrete de vencimento da mensalidade, no dia do vencimento, direto no
- * WhatsApp do mensalista — instruções + código Pix isolado na 2ª mensagem.
+ * Lembrete de vencimento da mensalidade — 5 dias antes e no próprio dia —
+ * direto no WhatsApp do mensalista: instruções + código Pix isolado na 2ª mensagem.
+ * daysBefore = 5 → "vence em DD/MM (daqui a 5 dias)"; 0 → "vence HOJE".
  */
 export async function sendMembershipDueReminder(opts: {
   teamId: string; phone: string; playerName: string; teamName: string;
-  amount: number; dueDate: string; copypaste: string; chargeId: string;
+  amount: number; dueDate: string; copypaste: string; chargeId: string; daysBefore: number;
 }) {
+  const isToday = opts.daysBefore === 0;
   const intro = [
     `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
     ``,
-    `Sua mensalidade do *${opts.teamName}* vence em *${fmtDate(opts.dueDate)}* (daqui a 5 dias).`,
+    isToday
+      ? `⏰ Sua mensalidade do *${opts.teamName}* vence *HOJE* (${fmtDate(opts.dueDate)}).`
+      : `Sua mensalidade do *${opts.teamName}* vence em *${fmtDate(opts.dueDate)}* (daqui a ${opts.daysBefore} dias).`,
     `Valor: *${fmtMoney(opts.amount)}*`,
     ``,
     `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`,
     ``,
-    `Pagando até o vencimento, você garante o mês sem pendências. ✅`,
+    isToday
+      ? `Pagando hoje, você garante o mês sem pendências. ✅`
+      : `Pagando até o vencimento, você garante o mês sem pendências. ✅`,
     ``,
     `_Se você já pagou, pode desconsiderar esta mensagem._`,
   ].join("\n");
-  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false, dedupe_key: `sub_due_intro:${opts.chargeId}` });
-  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: `sub_due:${opts.chargeId}` });
+  const key = isToday ? `sub_due:${opts.chargeId}` : `sub_due${opts.daysBefore}:${opts.chargeId}`;
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false, dedupe_key: `${key}:intro` });
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: key });
 }
 
 export async function enqueueIndividual(teamId: string | null, phone: string, body: string) {
