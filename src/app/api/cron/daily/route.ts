@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
   /** Já enviamos (ou estamos enviando) uma mensagem com essa chave? Protege
-   *  contra duplicata quando o servidor reinicia depois das 06h. */
+   *  contra duplicata quando o servidor reinicia depois das 08h. */
   async function alreadyDispatched(dedupeKey: string) {
     const { data } = await db.from("message_dispatches")
       .select("id").eq("dedupe_key", dedupeKey)

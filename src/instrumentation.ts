@@ -1,7 +1,7 @@
 // Agendador interno para deploys self-hosted (EasyPanel/Docker), onde não existe
 // o cron da Vercel. O próprio servidor dispara as tarefas:
 //   - a cada 60s: expirar reservas, abrir/fechar listas, despachar mensagens
-//   - 1x por dia (06h): gerar jogos, conciliação Asaas, lembretes
+//   - 1x por dia (08h de Brasília): gerar jogos, conciliação Asaas, lembretes
 // Na Vercel, defina DISABLE_INTERNAL_CRON=1 e use o vercel.json (crons).
 
 export async function register() {
@@ -24,11 +24,11 @@ export async function register() {
 
     let lastDaily = "";
     const daily = () => {
-      // horário de Brasília (o container roda em UTC: 06h UTC seriam 03h aqui)
+      // horário de Brasília (o container roda em UTC): lembretes às 08h, hora de gente acordada
       const tz = "America/Sao_Paulo";
       const today = new Date().toLocaleDateString("en-CA", { timeZone: tz });
       const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(new Date()));
-      if (hour >= 6 && lastDaily !== today) {
+      if (hour >= 8 && lastDaily !== today) {
         lastDaily = today;
         call("/api/cron/daily");
       }
@@ -37,5 +37,5 @@ export async function register() {
     setInterval(daily, 10 * 60_000);
   }, 10_000);
 
-  console.log("[cron] agendador interno ativo (tick 60s, daily 06h)");
+  console.log("[cron] agendador interno ativo (tick 60s, daily 08h Brasília)");
 }
