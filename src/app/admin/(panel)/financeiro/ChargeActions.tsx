@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { cancelCharge, restoreCharge } from "./actions";
+import { cancelCharge, restoreCharge, markChargePaid } from "./actions";
 import Spinner from "@/components/Spinner";
 
 /** Botões de cancelar / restaurar cobrança, com resultado na própria linha. */
@@ -27,8 +27,29 @@ export default function ChargeActions({ chargeId, status, playerName, amount, ty
     });
   }
 
+  const paidLabel = { cash: "em dinheiro", pix_manual: "via Pix (fora do Asaas)" };
+
   return (
     <div className="flex flex-col items-end gap-1">
+      {canCancel && (
+        <div className="flex gap-1">
+          {(["cash", "pix_manual"] as const).map((m) => (
+            <button key={m} className="btn btn-outline btn-sm" disabled={pending}
+              title={`Registrar que ${playerName} pagou ${paidLabel[m]}`}
+              onClick={() => {
+                if (!confirm(
+                  `Acusar pagamento de R$ ${amount.toFixed(2)} de ${playerName} ${paidLabel[m]}?\n\n` +
+                  `• O Asaas é marcado como recebido (para de cobrar)\n` +
+                  (type === "dropin" ? `• A vaga do jogo é confirmada\n` : `• A mensalidade fica em dia\n`) +
+                  `• O jogador recebe a confirmação no WhatsApp`
+                )) return;
+                run(() => markChargePaid(chargeId, m), "Pagamento registrado.");
+              }}>
+              {pending ? <Spinner size={14} /> : m === "cash" ? "💵" : "📱"} {m === "cash" ? "Pago em dinheiro" : "Pago via Pix"}
+            </button>
+          ))}
+        </div>
+      )}
       {canCancel && (
         <button className="btn btn-danger-soft btn-sm" disabled={pending}
           onClick={() => {

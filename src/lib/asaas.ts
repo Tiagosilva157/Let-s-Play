@@ -74,6 +74,14 @@ export const Asaas = {
   cancelPayment: (paymentId: string) =>
     asaas<{ deleted: boolean }>(`/payments/${paymentId}`, { method: "DELETE" }),
 
+  /** Confirma recebimento fora do Asaas (dinheiro/Pix manual) — o Asaas para de cobrar. */
+  receiveInCash: (paymentId: string, data: { paymentDate: string; value: number; notifyCustomer?: boolean }) =>
+    asaas<AsaasPayment>(`/payments/${paymentId}/receiveInCash`, { method: "POST", body: JSON.stringify({ notifyCustomer: false, ...data }) }),
+
+  /** Desfaz uma confirmação manual de recebimento. */
+  undoReceiveInCash: (paymentId: string) =>
+    asaas<AsaasPayment>(`/payments/${paymentId}/undoReceivedInCash`, { method: "POST", body: "{}" }),
+
   /** Reativa um pagamento excluído (desfaz um cancelamento). */
   restorePayment: (paymentId: string) =>
     asaas<AsaasPayment>(`/payments/${paymentId}/restore`, { method: "POST", body: "{}" }),

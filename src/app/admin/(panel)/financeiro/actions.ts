@@ -36,6 +36,16 @@ export async function cancelCharge(chargeId: string, reason: string) {
   return { ok: true, note: res.note };
 }
 
+/** Acusa pagamento recebido em dinheiro ou Pix fora do Asaas. */
+export async function markChargePaid(chargeId: string, method: "cash" | "pix_manual") {
+  const admin = await requireAdmin();
+  const { markPaidCore } = await import("@/lib/charges");
+  const res = await markPaidCore(chargeId, method, { adminId: admin.id });
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/admin/financeiro");
+  return { ok: true, note: res.note };
+}
+
 /** Desfaz um cancelamento: a cobrança volta a valer com o mesmo Pix. */
 export async function restoreCharge(chargeId: string) {
   const admin = await requireAdmin();

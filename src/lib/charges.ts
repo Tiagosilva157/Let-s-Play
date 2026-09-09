@@ -49,6 +49,59 @@ export async function cancelChargeCore(chargeId: string, actor: { adminId?: stri
   return { ok: true, note };
 }
 
+/**
+ * Acusa pagamento recebido fora do Asaas (dinheiro ou Pix direto).
+ * O Asaas é marcado como "recebido em dinheiro" (para de cobrar/lembrar);
+ * avulso ganha a vaga; mensalista fica em dia; o jogador recebe a confirmação.
+ */
+export async function markPaidCore(chargeId: string, method: "cash" | "pix_manual", actor: { adminId?: string }): Promise<ChargeOpResult> {
+  const db = supabaseAdmin();
+  const { data: c } = await db.from("charges")
+    .select("id, status, type, amount, due_date, asaas_payment_id, game_id, player_id, team_id, players(name, phone), teams(name), games(date)")
+    .eq("id", chargeId).maybeSingle();
+  if (!c) return { ok: false, error: "Cobrança não encontrada." };
+  if (!["pending", "overdue"].includes(c.status)) return { ok: false, error: `Só cobranças pendentes ou vencidas podem ser acusadas como pagas (esta está "${c.status}").` };
+
+  const paymentDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  if (c.asaas_payment_id) {
+    try {
+      await Asaas.receiveInCash(c.asaas_payment_id, { paymentDate, value: Number(c.amount) });
+    } catch (e) {
+      return { ok: false, error: "O Asaas recusou a confirmação: " + String(e).replace(/^Error:\s*/, "").slice(0, 200) };
+    }
+  }
+  await db.from("charges").update({ status: "received", payment_method: method, paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", c.id);
+
+  const pl = c.players as unknown as { name: string; phone: string };
+  const tm = c.teams as unknown as { name: string };
+  const { sendPaymentConfirmed, sendMembershipPaid, enqueueListUpdate, alreadyDispatched } = await import("@/lib/messaging");
+  let note = method === "cash" ? "Pagamento em dinheiro registrado." : "Pagamento via Pix registrado.";
+
+  if (c.type === "dropin" && c.game_id) {
+    const { data: r } = await db.rpc("fn_confirm_dropin_payment", { p_charge_id: c.id });
+    if (r?.confirmed) {
+      note += " Vaga confirmada.";
+      await enqueueListUpdate(c.game_id).catch(() => {});
+      const gm = c.games as unknown as { date: string } | null;
+      await sendPaymentConfirmed(c.team_id, pl.phone, pl.name, tm.name, gm?.date ?? "").catch(() => {});
+    } else if (r?.pending_review) {
+      note += " Atenção: a lista já estava cheia — ficou como 'pagou sem vaga' para você decidir.";
+    }
+  } else if (c.type === "subscription") {
+    await db.from("team_members").update({ subscription_status: "active" })
+      .eq("player_id", c.player_id).eq("team_id", c.team_id).neq("subscription_status", "canceled");
+    if (!(await alreadyDispatched(`sub_paid:${c.id}`))) {
+      await sendMembershipPaid({ teamId: c.team_id, phone: pl.phone, playerName: pl.name, teamName: tm.name, amount: Number(c.amount), dueDate: c.due_date, chargeId: c.id }).catch(() => {});
+    }
+  }
+  await db.from("audit_logs").insert({
+    actor_type: actor.adminId ? "admin" : "system", actor_id: actor.adminId ?? null,
+    action: "charge_marked_paid", entity: "charges", entity_id: c.id,
+    after: { method, player: pl?.name, amount: c.amount },
+  });
+  return { ok: true, note };
+}
+
 /** Restaura uma cobrança cancelada (o Asaas permite reativar pagamentos excluídos). */
 export async function restoreChargeCore(chargeId: string, actor: { adminId?: string }): Promise<ChargeOpResult> {
   const db = supabaseAdmin();

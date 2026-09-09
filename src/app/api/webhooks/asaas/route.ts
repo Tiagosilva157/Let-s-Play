@@ -91,7 +91,13 @@ export async function POST(req: NextRequest) {
         // não regride status final
         const finals = ["refunded", "canceled"];
         if (!(finals.includes(charge.status) && !finals.includes(newStatus))) {
-          await db.from("charges").update({ status: newStatus }).eq("id", charge.id);
+          const paid = newStatus === "received" || newStatus === "confirmed";
+          await db.from("charges").update({ status: newStatus, ...(paid ? { paid_at: new Date().toISOString() } : {}) }).eq("id", charge.id);
+          // forma de pagamento: Pix do Asaas — sem sobrescrever dinheiro/Pix manual já acusado pelo admin
+          const manual = payload.payment?.status === "RECEIVED_IN_CASH";
+          if (paid && !manual) {
+            await db.from("charges").update({ payment_method: "asaas_pix" }).eq("id", charge.id).is("payment_method", null);
+          }
         }
         await db.from("payment_events").insert({
           charge_id: charge.id, asaas_event: payload.event, payload,

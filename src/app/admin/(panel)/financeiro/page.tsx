@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { loadFinanceRows, loadCredits, loadTeams, STATUS_LABEL } from "@/lib/finance";
+import { loadFinanceRows, loadCredits, loadTeams, STATUS_LABEL, METHOD_LABEL } from "@/lib/finance";
 import CreditList from "./CreditList";
 import ChargeActions from "./ChargeActions";
 
@@ -157,7 +157,10 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <span className="font-semibold">R$ {r.amount.toFixed(2)}</span>
-                <span className={`badge ${STATUS_CLS[r.status] ?? "badge-neutral"}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                <span className={`badge ${STATUS_CLS[r.status] ?? "badge-neutral"}`}>
+                  {STATUS_LABEL[r.status] ?? r.status}
+                  {["received", "confirmed"].includes(r.status) && r.paymentMethod ? ` · ${METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod}` : ""}
+                </span>
                 <ChargeActions chargeId={r.id} status={r.status} playerName={r.playerName} amount={r.amount} type={r.type} />
               </div>
             </div>

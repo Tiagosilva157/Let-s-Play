@@ -16,6 +16,7 @@ export type FinanceRow =
       kind: "charge"; id: string; at: string;
       playerName: string; teamName: string; type: string; status: string; amount: number;
       gameDate: string | null; dueDate: string | null; asaasPaymentId: string | null;
+      paymentMethod: string | null; // asaas_pix | cash | pix_manual
     }
   | {
       kind: "credit_use"; id: string; at: string;
@@ -34,6 +35,7 @@ export const STATUS_LABEL: Record<string, string> = {
   refunded: "Estornado", canceled: "Cancelado", expired: "Expirado",
 };
 export const CREDIT_LABEL: Record<string, string> = { available: "Disponível", used: "Usado", revoked: "Revogado" };
+export const METHOD_LABEL: Record<string, string> = { asaas_pix: "Pix (Asaas)", cash: "Dinheiro", pix_manual: "Pix (manual)" };
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -47,7 +49,7 @@ export async function loadFinanceRows(f: FinanceFilters): Promise<FinanceRow[]> 
   const db = supabaseAdmin();
   let query = db
     .from("charges")
-    .select("id, type, amount, status, due_date, created_at, asaas_payment_id, team_id, players(name), teams(name), games(date)")
+    .select("id, type, amount, status, due_date, created_at, asaas_payment_id, payment_method, team_id, players(name), teams(name), games(date)")
     .order("created_at", { ascending: false })
     .limit(1000);
   if (f.status) query = query.eq("status", f.status);
@@ -80,6 +82,7 @@ export async function loadFinanceRows(f: FinanceFilters): Promise<FinanceRow[]> 
       gameDate: (c.games as unknown as { date: string } | null)?.date ?? null,
       dueDate: (c.due_date as string | null) ?? null,
       asaasPaymentId: (c.asaas_payment_id as string | null) ?? null,
+      paymentMethod: (c.payment_method as string | null) ?? null,
     })),
     ...(usedCredits as Array<Record<string, unknown>>).map((u) => ({
       kind: "credit_use" as const, id: "credit:" + u.id, at: (u.used_at as string) ?? "",

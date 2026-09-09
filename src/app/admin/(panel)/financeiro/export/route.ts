@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireAdmin } from "@/lib/admin";
-import { loadFinanceRows, loadCredits, STATUS_LABEL, CREDIT_LABEL } from "@/lib/finance";
+import { loadFinanceRows, loadCredits, STATUS_LABEL, CREDIT_LABEL, METHOD_LABEL } from "@/lib/finance";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
       "Vencimento": day(r.dueDate),
       "Valor (R$)": r.amount,
       "Situação": STATUS_LABEL[r.status] ?? r.status,
+      "Forma": r.paymentMethod ? (METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod) : "",
       "Pagamento Asaas": r.asaasPaymentId ?? "",
     } : {
       "Data": stamp(r.at),
@@ -43,12 +44,13 @@ export async function GET(req: NextRequest) {
       "Vencimento": "",
       "Valor (R$)": r.amount,
       "Situação": `Pago com crédito${r.originGameDate ? ` do jogo de ${day(r.originGameDate)}` : ""}`,
+      "Forma": "Crédito",
       "Pagamento Asaas": "",
     });
     const total = rows.reduce((s, r) => s + r.amount, 0);
-    data.push({ "Data": "", "Jogador": "TOTAL", "Turma": "", "Tipo": "", "Jogo": "", "Vencimento": "", "Valor (R$)": total, "Situação": `${rows.length} linhas`, "Pagamento Asaas": "" });
+    data.push({ "Data": "", "Jogador": "TOTAL", "Turma": "", "Tipo": "", "Jogo": "", "Vencimento": "", "Valor (R$)": total, "Situação": `${rows.length} linhas`, "Forma": "", "Pagamento Asaas": "" });
     const ws = XLSX.utils.json_to_sheet(data);
-    ws["!cols"] = [18, 30, 16, 16, 12, 12, 12, 34, 20].map((w) => ({ wch: w }));
+    ws["!cols"] = [18, 30, 16, 16, 12, 12, 12, 34, 14, 20].map((w) => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws, "Cobranças");
     name = "cobrancas";
   } else {
