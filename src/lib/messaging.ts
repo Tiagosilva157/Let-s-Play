@@ -331,6 +331,8 @@ export async function sendMembershipDueReminder(opts: {
     `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`,
     ``,
     `Pagando hoje, você garante o mês sem pendências. ✅`,
+    ``,
+    `_Se você já pagou, pode desconsiderar esta mensagem._`,
   ].join("\n");
   await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false, dedupe_key: `sub_due_intro:${opts.chargeId}` });
   await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: `sub_due:${opts.chargeId}` });
@@ -424,3 +426,59 @@ export async function dispatchPending(limit = 20): Promise<{ sent: number; faile
 }
 
 export { formatPhoneBR };
+
+/** "Outubro de 2026" a partir do vencimento. */
+export function refMonthBR(dueDate: string) {
+  const m = new Date(`${dueDate}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}
+
+/**
+ * Mensalidade recém-gerada no Asaas → avisa o mensalista na hora, com o Pix.
+ * Mensagem 1: dados + "se já pagou, desconsidere". Mensagem 2: código Pix sozinho.
+ * Sem código Pix disponível, manda o link de pagamento no lugar.
+ */
+export async function sendMembershipCreated(opts: {
+  teamId: string; phone: string; playerName: string; teamName: string;
+  amount: number; dueDate: string; chargeId: string; copypaste?: string | null; invoiceUrl?: string | null;
+}) {
+  const intro = [
+    `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
+    ``,
+    `Sua mensalidade do *${opts.teamName}* — *${refMonthBR(opts.dueDate)}* — já está disponível.`,
+    `Valor: *${fmtMoney(opts.amount)}* · Vencimento: *${fmtDate(opts.dueDate)}*`,
+    ``,
+    opts.copypaste
+      ? `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`
+      : `💳 Pague por aqui: ${opts.invoiceUrl ?? "(link indisponível — fale com o organizador)"}`,
+    ``,
+    `_Se você já pagou, pode desconsiderar esta mensagem._ ✅`,
+  ].join("\n");
+  if (opts.copypaste) {
+    await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false, dedupe_key: `sub_created_intro:${opts.chargeId}` });
+    await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: `sub_created:${opts.chargeId}` });
+  } else {
+    await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dedupe_key: `sub_created:${opts.chargeId}` });
+  }
+}
+
+/** Mensalidade paga → confirmação ao mensalista. */
+export async function sendMembershipPaid(opts: {
+  teamId: string; phone: string; playerName: string; teamName: string; amount: number; dueDate: string | null; chargeId: string;
+}) {
+  const body = [
+    `✅ Pagamento confirmado, ${opts.playerName.split(" ")[0]}!`,
+    ``,
+    `Mensalidade do *${opts.teamName}*${opts.dueDate ? ` — *${refMonthBR(opts.dueDate)}*` : ""} (${fmtMoney(opts.amount)}) recebida.`,
+    `Obrigado! Bom jogo! 🏐`,
+  ].join("\n");
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body, dedupe_key: `sub_paid:${opts.chargeId}` });
+}
+
+/** Já existe envio (feito ou em andamento) com essa chave? Evita repetir em reprocessamentos. */
+export async function alreadyDispatched(dedupeKey: string) {
+  const db = supabaseAdmin();
+  const { data } = await db.from("message_dispatches").select("id").eq("dedupe_key", dedupeKey)
+    .in("status", ["queued", "sending", "sent"]).limit(1).maybeSingle();
+  return !!data;
+}

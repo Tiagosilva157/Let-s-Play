@@ -41,23 +41,41 @@ export async function POST(req: NextRequest) {
   try {
     const asaasPaymentId: string | undefined = payload.payment?.id;
 
-    // mensalidade gerada pela assinatura → cria cobrança local
+    // mensalidade gerada pela assinatura → cria cobrança local e AVISA o mensalista com o Pix
     if (payload.event === "PAYMENT_CREATED" && asaasPaymentId && payload.payment?.subscription) {
       const { data: member } = await db
         .from("team_members")
-        .select("player_id, team_id")
+        .select("player_id, team_id, players(name, phone), teams(name)")
         .eq("asaas_subscription_id", payload.payment.subscription)
         .maybeSingle();
       if (member) {
-        await db.from("charges").upsert({
-          player_id: member.player_id,
-          team_id: member.team_id,
-          type: "subscription",
-          asaas_payment_id: asaasPaymentId,
-          amount: payload.payment.value,
-          status: "pending",
-          due_date: payload.payment.dueDate ?? null,
-        }, { onConflict: "asaas_payment_id", ignoreDuplicates: true });
+        const { data: existing } = await db.from("charges").select("id").eq("asaas_payment_id", asaasPaymentId).maybeSingle();
+        let chargeId = existing?.id as string | undefined;
+        if (!chargeId) {
+          const { data: created } = await db.from("charges").insert({
+            player_id: member.player_id,
+            team_id: member.team_id,
+            type: "subscription",
+            asaas_payment_id: asaasPaymentId,
+            amount: payload.payment.value,
+            status: "pending",
+            due_date: payload.payment.dueDate ?? null,
+          }).select("id").single();
+          chargeId = created?.id;
+        }
+        const { sendMembershipCreated, alreadyDispatched } = await import("@/lib/messaging");
+        if (chargeId && !(await alreadyDispatched(`sub_created:${chargeId}`))) {
+          const pl = member.players as unknown as { name: string; phone: string };
+          const tm = member.teams as unknown as { name: string };
+          const { Asaas } = await import("@/lib/asaas");
+          const qr = await Asaas.getPixQr(asaasPaymentId).catch(() => null);
+          if (qr?.payload) await db.from("charges").update({ pix_qr: qr.encodedImage, pix_copypaste: qr.payload }).eq("id", chargeId);
+          await sendMembershipCreated({
+            teamId: member.team_id, phone: pl.phone, playerName: pl.name, teamName: tm.name,
+            amount: Number(payload.payment.value), dueDate: payload.payment.dueDate ?? new Date().toISOString().slice(0, 10),
+            chargeId, copypaste: qr?.payload ?? null, invoiceUrl: payload.payment.invoiceUrl ?? null,
+          }).catch((e) => console.error("[whatsapp] mensalidade gerada:", e));
+        }
       }
     }
 
@@ -117,13 +135,23 @@ export async function POST(req: NextRequest) {
 
         // mensalidade
         if (charge.type === "subscription") {
-          const { data: sub } = await db.from("charges").select("player_id, team_id").eq("id", charge.id).single();
+          const { data: sub } = await db.from("charges").select("player_id, team_id, amount, due_date, players(name, phone), teams(name)").eq("id", charge.id).single();
           if (sub) {
             if (payload.event === "PAYMENT_RECEIVED" || payload.event === "PAYMENT_CONFIRMED") {
               await db.from("team_members")
                 .update({ subscription_status: "active" })
                 .eq("player_id", sub.player_id).eq("team_id", sub.team_id)
                 .neq("subscription_status", "canceled");
+              // confirma o pagamento ao mensalista (uma vez por cobrança)
+              const { sendMembershipPaid, alreadyDispatched } = await import("@/lib/messaging");
+              if (!(await alreadyDispatched(`sub_paid:${charge.id}`))) {
+                const pl = sub.players as unknown as { name: string; phone: string };
+                const tm = sub.teams as unknown as { name: string };
+                await sendMembershipPaid({
+                  teamId: sub.team_id, phone: pl.phone, playerName: pl.name, teamName: tm.name,
+                  amount: Number(sub.amount), dueDate: sub.due_date, chargeId: charge.id,
+                }).catch((e) => console.error("[whatsapp] mensalidade paga:", e));
+              }
             }
             if (payload.event === "PAYMENT_OVERDUE") {
               await db.from("team_members")
