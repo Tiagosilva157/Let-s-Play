@@ -54,13 +54,16 @@ export async function GET(req: NextRequest) {
     return !!data;
   }
 
-  // lembrete de vencimento: mensalidades que vencem HOJE → Pix no WhatsApp
+  // lembrete de vencimento: mensalidades que vencem daqui a 5 DIAS → Pix no WhatsApp
+  const REMINDER_DAYS_BEFORE = 5;
+  const reminderDate = new Date(new Date(today + "T12:00:00-03:00").getTime() + REMINDER_DAYS_BEFORE * 86400e3)
+    .toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   const { data: dueToday } = await db
     .from("charges")
     .select("id, amount, due_date, asaas_payment_id, team_id, players(name, phone), teams(name)")
     .eq("type", "subscription")
     .in("status", ["pending", "overdue"])
-    .eq("due_date", today)
+    .eq("due_date", reminderDate)
     .not("asaas_payment_id", "is", null)
     .limit(200);
   let dueReminders = 0;

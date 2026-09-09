@@ -325,12 +325,12 @@ export async function sendMembershipDueReminder(opts: {
   const intro = [
     `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
     ``,
-    `Sua mensalidade do *${opts.teamName}* vence *hoje* (${fmtDate(opts.dueDate)}).`,
+    `Sua mensalidade do *${opts.teamName}* vence em *${fmtDate(opts.dueDate)}* (daqui a 5 dias).`,
     `Valor: *${fmtMoney(opts.amount)}*`,
     ``,
     `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`,
     ``,
-    `Pagando hoje, você garante o mês sem pendências. ✅`,
+    `Pagando até o vencimento, você garante o mês sem pendências. ✅`,
     ``,
     `_Se você já pagou, pode desconsiderar esta mensagem._`,
   ].join("\n");
