@@ -26,6 +26,26 @@ export async function refundCreditInCash(creditId: string) {
   return res.done ? { ok: true } : { ok: true, note: res.note };
 }
 
+/** Cancela uma cobrança pendente/vencida no Asaas e no sistema (ex.: pagou em dinheiro). */
+export async function cancelCharge(chargeId: string, reason: string) {
+  const admin = await requireAdmin();
+  const { cancelChargeCore } = await import("@/lib/charges");
+  const res = await cancelChargeCore(chargeId, { adminId: admin.id, reason: reason?.trim() || undefined });
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/admin/financeiro");
+  return { ok: true, note: res.note };
+}
+
+/** Desfaz um cancelamento: a cobrança volta a valer com o mesmo Pix. */
+export async function restoreCharge(chargeId: string) {
+  const admin = await requireAdmin();
+  const { restoreChargeCore } = await import("@/lib/charges");
+  const res = await restoreChargeCore(chargeId, { adminId: admin.id });
+  if (!res.ok) return { error: res.error };
+  revalidatePath("/admin/financeiro");
+  return { ok: true, note: res.note };
+}
+
 /** Revoga um crédito disponível (ex.: concedido por engano). */
 export async function revokeCredit(creditId: string) {
   const admin = await requireAdmin();

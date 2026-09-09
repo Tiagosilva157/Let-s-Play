@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { loadFinanceRows, loadCredits, loadTeams, STATUS_LABEL } from "@/lib/finance";
 import CreditList from "./CreditList";
+import ChargeActions from "./ChargeActions";
 
 export const dynamic = "force-dynamic";
 
@@ -154,9 +155,10 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
                     : `Mensalidade${r.dueDate ? ` — ${refMonth(r.dueDate)} · vence ${fmtDay(r.dueDate)}` : ""}`}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <span className="font-semibold">R$ {r.amount.toFixed(2)}</span>
                 <span className={`badge ${STATUS_CLS[r.status] ?? "badge-neutral"}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                <ChargeActions chargeId={r.id} status={r.status} playerName={r.playerName} amount={r.amount} type={r.type} />
               </div>
             </div>
           );

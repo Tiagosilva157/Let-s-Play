@@ -74,6 +74,10 @@ export const Asaas = {
   cancelPayment: (paymentId: string) =>
     asaas<{ deleted: boolean }>(`/payments/${paymentId}`, { method: "DELETE" }),
 
+  /** Reativa um pagamento excluído (desfaz um cancelamento). */
+  restorePayment: (paymentId: string) =>
+    asaas<AsaasPayment>(`/payments/${paymentId}/restore`, { method: "POST", body: "{}" }),
+
   refundPayment: (paymentId: string) =>
     asaas<AsaasPayment>(`/payments/${paymentId}/refund`, { method: "POST", body: "{}" }),
 
