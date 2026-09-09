@@ -5,12 +5,8 @@ import { useRouter } from "next/navigation";
 import { revokeCredit, refundCreditInCash } from "./actions";
 import Spinner from "@/components/Spinner";
 
-export interface CreditRow {
-  id: string; playerName: string; teamName: string; amount: number;
-  status: string; reason: string; createdAt: string; usedGameDate: string | null;
-  originGameDate: string | null; // jogo em que o pagamento foi feito
-  refundable: boolean;           // tem pagamento no Asaas para devolver em dinheiro
-}
+export type { CreditRow } from "@/lib/finance";
+import type { CreditRow } from "@/lib/finance";
 
 const CREDIT_LABEL: Record<string, { label: string; cls: string }> = {
   available: { label: "Disponível", cls: "badge-success" },
@@ -20,7 +16,7 @@ const CREDIT_LABEL: Record<string, { label: string; cls: string }> = {
 
 const fmtDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR");
 
-export default function CreditList({ credits }: { credits: CreditRow[] }) {
+export default function CreditList({ credits, team = "" }: { credits: CreditRow[]; team?: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
@@ -100,6 +96,10 @@ export default function CreditList({ credits }: { credits: CreditRow[] }) {
       <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center">
         <input className="input sm:flex-1" placeholder="🔍 Filtrar por nome do jogador"
           value={search} onChange={(e) => setSearch(e.target.value)} />
+        <a className="btn btn-outline btn-sm shrink-0" title="Baixa em Excel os créditos listados abaixo"
+          href={`/admin/financeiro/export?what=credits&only=${onlyAvailable ? "available" : "all"}&q=${encodeURIComponent(search.trim())}&team=${encodeURIComponent(team)}`}>
+          📥 Exportar Excel
+        </a>
         <label className="flex shrink-0 items-center gap-2 text-sm">
           <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={onlyAvailable} onChange={(e) => setOnlyAvailable(e.target.checked)} />
           Só disponíveis
