@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { getSessionPlayer } from "@/lib/session";
 import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer, normalizeCpfCnpj, MissingCustomerDataError } from "@/lib/asaas-customer";
-import { enqueueListUpdate, sendPixToPlayer, enqueueIndividual } from "@/lib/messaging";
+import { enqueueListUpdate, sendPixToPlayer, enqueueIndividual, enqueueGroupMessage } from "@/lib/messaging";
 import { peekCredit, claimCredit, grantCreditForCharge } from "@/lib/credits";
 import { processPromotions } from "@/lib/waitlist";
 
@@ -132,6 +132,31 @@ export async function POST(req: NextRequest) {
     // 2. só então reservamos a vaga
     const { data } = await db.rpc("fn_reserve_dropin", { p_game_id: gameId, p_player_id: player.id });
     result = data;
+
+    // 2a. lista cheia → entrou na fila (o banco responde ok=false + waitlisted).
+    //     Avisa o jogador, anuncia no grupo e reenvia a lista com o bloco "Lista de espera".
+    if (result?.waitlisted && !result.already_waitlisted) {
+      const { count } = await db.from("game_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("game_id", gameId).eq("status", "waitlist");
+      const pos = count ?? 1;
+      const first = p!.name.split(" ")[0];
+      await db.from("audit_logs").insert({
+        actor_type: "player", actor_id: player.id, action: "join_waitlist",
+        entity: "game_participants", entity_id: gameId, after: { position: pos },
+      });
+      await enqueueIndividual(game.team_id, p!.phone, [
+        `📋 ${first}, a lista do *${team.name}* de ${game.date.split("-").reverse().join("/")} está cheia e você entrou na *lista de espera* (posição ${pos}).`,
+        ``,
+        `Se abrir vaga, o Pix chega aqui no seu WhatsApp com ${team.reservation_minutes ?? 15} minutos para pagar. Fique de olho! 👀`,
+      ].join("\n")).catch(() => {});
+      const { data: tg } = await db.from("teams").select("whatsapp_group_id, message_mode").eq("id", game.team_id).single();
+      if (tg?.whatsapp_group_id && tg.message_mode !== "manual") {
+        await enqueueGroupMessage(game.team_id, tg.whatsapp_group_id,
+          `📋 *${first}* entrou na lista de espera (${pos}º).`, gameId).catch(() => {});
+      }
+      await enqueueListUpdate(gameId).catch(() => {});
+    }
 
     // 2b. com crédito: confirma direto, sem Pix — consome o crédito
     if (result?.ok && !result.already_reserved && credit && (await claimCredit(credit.id, gameId))) {
