@@ -55,8 +55,14 @@ export async function loadFinanceRows(f: FinanceFilters): Promise<FinanceRow[]> 
   if (f.status) query = query.eq("status", f.status);
   if (f.type === "subscription" || f.type === "dropin") query = query.eq("type", f.type);
   if (f.team) query = query.eq("team_id", f.team);
-  if (f.from) query = query.gte("created_at", `${f.from}T00:00:00-03:00`);
-  if (f.to) query = query.lte("created_at", `${f.to}T23:59:59-03:00`);
+  // Período = mês de competência: mensalidade conta pelo VENCIMENTO (o Asaas
+  // gera a de outubro ainda em setembro); avulso conta pela data em que foi gerado.
+  if (f.from) {
+    query = query.or(`and(type.eq.subscription,due_date.gte.${f.from}),and(type.neq.subscription,created_at.gte.${f.from}T00:00:00-03:00)`);
+  }
+  if (f.to) {
+    query = query.or(`and(type.eq.subscription,due_date.lte.${f.to}),and(type.neq.subscription,created_at.lte.${f.to}T23:59:59-03:00)`);
+  }
   const { data: charges } = await query;
 
   // vagas pagas com crédito (linhas informativas — o dinheiro entrou no jogo de origem)

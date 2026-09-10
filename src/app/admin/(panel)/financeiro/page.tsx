@@ -110,8 +110,16 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
             <option value="">Todas as turmas</option>
             {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          <input name="from" type="date" className="input" defaultValue={cur.from ?? ""} title="De" />
-          <input name="to" type="date" className="input" defaultValue={cur.to ?? ""} title="Até" />
+          <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+            <label className="block text-xs text-[var(--ink-soft)]">
+              📅 De (vencimento)
+              <input name="from" type="date" className="input mt-1 w-full min-w-0" defaultValue={cur.from ?? ""} />
+            </label>
+            <label className="block text-xs text-[var(--ink-soft)]">
+              📅 Até
+              <input name="to" type="date" className="input mt-1 w-full min-w-0" defaultValue={cur.to ?? ""} />
+            </label>
+          </div>
           <div className="flex flex-wrap gap-2 sm:col-span-5">
             <button className="btn btn-primary btn-sm">Filtrar</button>
             {hasFilter && <a href="/admin/financeiro" className="btn btn-outline btn-sm">Limpar filtros</a>}
