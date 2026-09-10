@@ -68,7 +68,7 @@ export async function adminAddPlayer(gameId: string, playerId: string) {
   // avisa o grupo e manda a lista atualizada em seguida
   if (team.whatsapp_group_id) {
     await enqueueGroupMessage(game.team_id, team.whatsapp_group_id,
-      `✅ *${player.name}* foi confirmado na lista pelo organizador.`, gameId).catch(() => {});
+      `✅ *${player.name}* entrou na lista (confirmação feita pelo organizador).`, gameId).catch(() => {});
   }
   await enqueueListUpdate(gameId).catch(() => {});
   revalidatePath(`/admin/jogos/${gameId}`);
@@ -79,8 +79,12 @@ export async function adminRemove(gameId: string, playerId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
   const { data: pl } = await db.from("players").select("name").eq("id", playerId).maybeSingle();
-  await db.from("game_participants").update({ status: "removed", source: "admin" })
-    .eq("game_id", gameId).eq("player_id", playerId);
+  // idempotente: clique repetido (ou tela atrasada) não remove nem anuncia duas vezes
+  const { data: removedRows } = await db.from("game_participants").update({ status: "removed", source: "admin" })
+    .eq("game_id", gameId).eq("player_id", playerId)
+    .in("status", ["confirmed", "reserved", "waitlist", "invited"])
+    .select("id");
+  if (!removedRows?.length) { revalidatePath(`/admin/jogos/${gameId}`); return; }
   // avisa o grupo da retirada manual
   const { data: g } = await db.from("games").select("team_id, teams(whatsapp_group_id)").eq("id", gameId).maybeSingle();
   const grp = (g?.teams as unknown as { whatsapp_group_id: string | null } | null)?.whatsapp_group_id;

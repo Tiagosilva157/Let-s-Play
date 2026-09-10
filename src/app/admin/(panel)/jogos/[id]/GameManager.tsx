@@ -167,7 +167,7 @@ export default function GameManager({ game, participants, addable = [], splitter
       <Section title={`Confirmados (${confirmed.length})`}>
         {confirmed.map((p) => (
           <Row key={p.id} p={p} pending={pending}
-            actions={<button className="btn btn-danger-soft btn-sm" onClick={() => run(() => adminRemove(game.id, p.playerId))}>Remover</button>} />
+            actions={<button className="btn btn-danger-soft btn-sm" disabled={pending} onClick={() => run(() => adminRemove(game.id, p.playerId))}>{pending && <Spinner size={14} />} Remover</button>} />
         ))}
       </Section>
 
@@ -175,7 +175,7 @@ export default function GameManager({ game, participants, addable = [], splitter
         <Section title={`Mensalistas sem resposta (${invited.length})`}>
           {invited.map((p) => (
             <Row key={p.id} p={p} pending={pending}
-              actions={<button className="btn btn-outline btn-sm" onClick={() => run(() => adminConfirm(game.id, p.playerId, "member"))}>Confirmar</button>} />
+              actions={<button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => adminConfirm(game.id, p.playerId, "member"))}>{pending && <Spinner size={14} />} Confirmar</button>} />
           ))}
         </Section>
       )}

@@ -166,8 +166,10 @@ function rosterLines(r: Roster): string[] {
     ``,
     r.dropinSlotsFree > 0
       ? `🟢 *Ainda cabem ${r.dropinSlotsFree} não ${r.dropinSlotsFree === 1 ? "mensalista" : "mensalistas"}*`
-      : `🔴 *Lista completa — sem vagas para não mensalistas*`,
-    `_Cada mensalista que avisar que não vem libera mais uma vaga._`,
+      : `🔴 *Lista completa — quem entrar agora vai para a lista de espera*`,
+    r.dropinSlotsFree > 0
+      ? `_Cada mensalista que avisar que não vem libera mais uma vaga._`
+      : `_Abriu vaga? O 1º da espera é avisado no WhatsApp e tem 1 hora para pagar o Pix._`,
   );
 
   return lines;
