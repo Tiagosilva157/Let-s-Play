@@ -63,8 +63,13 @@ export async function POST(req: NextRequest) {
           }).select("id").single();
           chargeId = created?.id;
         }
+        // O Asaas gera a mensalidade do mês SEGUINTE com ~30 dias de antecedência.
+        // Só avisamos na hora se o vencimento estiver próximo; senão os lembretes
+        // (5 dias antes e no dia) cuidam disso — evita "cobrança de outubro em setembro".
+        const dueStr: string = payload.payment.dueDate ?? new Date().toISOString().slice(0, 10);
+        const daysToDue = Math.round((new Date(dueStr + "T12:00:00-03:00").getTime() - Date.now()) / 86400e3);
         const { sendMembershipCreated, alreadyDispatched } = await import("@/lib/messaging");
-        if (chargeId && !(await alreadyDispatched(`sub_created:${chargeId}`))) {
+        if (chargeId && daysToDue <= 7 && !(await alreadyDispatched(`sub_created:${chargeId}`))) {
           const pl = member.players as unknown as { name: string; phone: string };
           const tm = member.teams as unknown as { name: string };
           const { Asaas } = await import("@/lib/asaas");
