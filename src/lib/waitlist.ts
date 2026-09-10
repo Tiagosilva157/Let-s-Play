@@ -10,7 +10,7 @@ import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer } from "@/lib/asaas-customer";
 import {
   enqueueGroupMessage, enqueueIndividual, enqueueListUpdate,
-  sendPixToPlayer, publicLink,
+  sendPixToPlayer, publicLink, fmtMinutes,
 } from "@/lib/messaging";
 
 interface PromotedInfo {
@@ -35,7 +35,7 @@ async function loadContext(gameId: string) {
   const db = supabaseAdmin();
   const { data: g } = await db
     .from("games")
-    .select("id, date, time, team_id, teams(id, name, slug, dropin_fee, reservation_minutes, whatsapp_group_id, message_mode)")
+    .select("id, date, time, team_id, teams(id, name, slug, dropin_fee, reservation_minutes, waitlist_minutes, whatsapp_group_id, message_mode)")
     .eq("id", gameId)
     .maybeSingle();
   if (!g) return null;
@@ -43,7 +43,7 @@ async function loadContext(gameId: string) {
     game: g,
     team: g.teams as unknown as {
       id: string; name: string; slug: string; dropin_fee: number;
-      reservation_minutes: number; whatsapp_group_id: string | null; message_mode: string;
+      reservation_minutes: number; waitlist_minutes: number; whatsapp_group_id: string | null; message_mode: string;
     },
   };
 }
@@ -127,7 +127,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
       await sendPixToPlayer({
         teamId: team.id, phone: pl.phone, playerName: pl.name, teamName: team.name,
         date: game.date, time: String(game.time), amount: Number(team.dropin_fee),
-        copypaste: qr.payload, minutes: team.reservation_minutes ?? 15,
+        copypaste: qr.payload, minutes: team.waitlist_minutes ?? 60,
       });
       pixSent = true;
     } catch (e) {
@@ -140,7 +140,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
       await enqueueIndividual(team.id, pl.phone, [
         `🎉 ${firstName(pl.name)}, abriu vaga no *${team.name}* de ${fmtDate(game.date)}!`,
         ``,
-        `Você subiu da lista de espera e tem *${team.reservation_minutes ?? 15} minutos* para garantir a vaga pagando o Pix.`,
+        `Você subiu da lista de espera e tem *${fmtMinutes(team.waitlist_minutes ?? 60)}* para garantir a vaga pagando o Pix.`,
         ``,
         `Acesse o link para gerar o pagamento:`,
         `👉 ${link}`,
@@ -153,8 +153,8 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
   if (team.whatsapp_group_id && team.message_mode !== "manual" && awaitingPay.length) {
     const nomes = awaitingPay.map((p) => `*${firstName(p.playerName)}*`).join(", ");
     const linha = awaitingPay.length === 1
-      ? `🔔 ${nomes} subiu da lista de espera e tem ${team.reservation_minutes ?? 15} minutos para confirmar o pagamento.`
-      : `🔔 ${nomes} subiram da lista de espera e têm ${team.reservation_minutes ?? 15} minutos para confirmar o pagamento.`;
+      ? `🔔 ${nomes} subiu da lista de espera e tem ${fmtMinutes(team.waitlist_minutes ?? 60)} para confirmar o pagamento.`
+      : `🔔 ${nomes} subiram da lista de espera e têm ${fmtMinutes(team.waitlist_minutes ?? 60)} para confirmar o pagamento.`;
     await enqueueGroupMessage(team.id, team.whatsapp_group_id, linha, gameId).catch(() => {});
   }
 

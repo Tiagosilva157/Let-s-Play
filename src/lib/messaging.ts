@@ -289,7 +289,7 @@ export async function sendPixToPlayer(opts: {
   const intro = [
     `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
     ``,
-    `Sua vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} está reservada por *${opts.minutes} minutos*.`,
+    `Sua vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} está reservada por *${fmtMinutes(opts.minutes)}*.`,
     ``,
     `Valor: *${fmtMoney(opts.amount)}*`,
     ``,
@@ -488,4 +488,12 @@ export async function alreadyDispatched(dedupeKey: string) {
   const { data } = await db.from("message_dispatches").select("id").eq("dedupe_key", dedupeKey)
     .in("status", ["queued", "sending", "sent"]).limit(1).maybeSingle();
   return !!data;
+}
+
+/** 15 → "15 minutos", 60 → "1 hora", 90 → "1h30" */
+export function fmtMinutes(min: number) {
+  if (min < 60) return `${min} minutos`;
+  const h = Math.floor(min / 60), m = min % 60;
+  if (m) return `${h}h${String(m).padStart(2, "0")}`;
+  return h === 1 ? "1 hora" : `${h} horas`;
 }

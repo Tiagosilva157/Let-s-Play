@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { getSessionPlayer } from "@/lib/session";
 import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer, normalizeCpfCnpj, MissingCustomerDataError } from "@/lib/asaas-customer";
-import { enqueueListUpdate, sendPixToPlayer, enqueueIndividual, enqueueGroupMessage } from "@/lib/messaging";
+import { enqueueListUpdate, sendPixToPlayer, enqueueIndividual, enqueueGroupMessage, fmtMinutes } from "@/lib/messaging";
 import { peekCredit, claimCredit, grantCreditForCharge } from "@/lib/credits";
 import { processPromotions } from "@/lib/waitlist";
 
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const { data: game } = await db
     .from("games")
-    .select("id, team_id, date, time, teams(dropin_fee, name, reservation_minutes)")
+    .select("id, team_id, date, time, teams(dropin_fee, name, reservation_minutes, waitlist_minutes)")
     .eq("id", gameId)
     .single();
   if (!game) return NextResponse.json({ error: "game_not_found" }, { status: 404 });
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
       if (cpfInput) p!.cpf_cnpj = cpfInput;
       if (emailInput) p!.email = emailInput;
     }
-    const team = game.teams as unknown as { dropin_fee: number; name: string; reservation_minutes: number };
+    const team = game.teams as unknown as { dropin_fee: number; name: string; reservation_minutes: number; waitlist_minutes: number };
 
     // crédito disponível cobre a taxa? então nem precisamos de CPF/Pix
     const credit = await peekCredit(player.id, game.team_id, Number(team.dropin_fee));
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       await enqueueIndividual(game.team_id, p!.phone, [
         `📋 ${first}, a lista do *${team.name}* de ${game.date.split("-").reverse().join("/")} está cheia e você entrou na *lista de espera* (posição ${pos}).`,
         ``,
-        `Se abrir vaga, o Pix chega aqui no seu WhatsApp com ${team.reservation_minutes ?? 15} minutos para pagar. Fique de olho! 👀`,
+        `Se abrir vaga, o Pix chega aqui no seu WhatsApp e você tem *${fmtMinutes(team.waitlist_minutes ?? 60)}* para pagar. Fique de olho! 👀`,
       ].join("\n")).catch(() => {});
       const { data: tg } = await db.from("teams").select("whatsapp_group_id, message_mode").eq("id", game.team_id).single();
       if (tg?.whatsapp_group_id && tg.message_mode !== "manual") {

@@ -349,7 +349,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               {myStatus?.status === "waitlist" && (
                 <>
                   <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm font-semibold text-[var(--warn)]">
-                    Você está na lista de espera. Se abrir vaga, o Pix chega no seu WhatsApp com {`15 minutos`} para pagar!
+                    Você está na lista de espera. Se abrir vaga, o Pix chega no seu WhatsApp e você tem <b>1 hora</b> para pagar!
                   </p>
                   <button className="btn btn-outline" onClick={() => doAction("withdraw")} disabled={busy}>
                     {busy && <Spinner />} Sair da lista de espera
