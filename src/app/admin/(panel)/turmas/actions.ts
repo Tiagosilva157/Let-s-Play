@@ -33,6 +33,7 @@ export async function saveTeam(id: string | null, formData: FormData) {
     const { error } = await db.from("teams").update(values).eq("id", id);
     if (error) return { error: error.code === "23505" ? "Já existe uma turma com esse link." : "Erro ao salvar." };
     await auditAdmin(admin.id, "update_team", "teams", id, values);
+    await reapplyDeadlines(id);
   } else {
     const { data, error } = await db.from("teams").insert(values).select("id").single();
     if (error) return { error: error.code === "23505" ? "Já existe uma turma com esse link." : "Erro ao criar." };
@@ -232,4 +233,29 @@ export async function removeMember(memberId: string) {
   await db.from("team_members").update({ status: "inactive" }).eq("id", memberId);
   await auditAdmin(admin.id, "remove_member", "team_members", memberId);
   revalidatePath(`/admin/turmas`);
+}
+
+/**
+ * Os jogos guardam os prazos (abrir / confirmar até / desistir até) calculados
+ * na hora em que foram gerados. Quando a turma muda essas horas, reaplicamos
+ * nos jogos que ainda não aconteceram — senão a tela do jogador mostra o prazo velho.
+ */
+async function reapplyDeadlines(teamId: string) {
+  const db = supabaseAdmin();
+  const { gameStart, todayBR } = await import("@/lib/dates");
+  const { data: t } = await db.from("teams")
+    .select("open_hours_before, confirm_hours_before, withdraw_hours_before").eq("id", teamId).single();
+  if (!t) return;
+  const { data: games } = await db.from("games").select("id, date, time, status")
+    .eq("team_id", teamId).gte("date", todayBR()).in("status", ["scheduled", "open", "closed"]);
+  for (const g of games ?? []) {
+    const start = gameStart(g.date, g.time).getTime();
+    const patch: Record<string, string> = {
+      confirm_until: new Date(start - t.confirm_hours_before * 3600e3).toISOString(),
+      withdraw_until: new Date(start - t.withdraw_hours_before * 3600e3).toISOString(),
+    };
+    // a abertura só muda em jogo ainda não aberto (o aberto já avisou o grupo)
+    if (g.status === "scheduled") patch.opens_at = new Date(start - t.open_hours_before * 3600e3).toISOString();
+    await db.from("games").update(patch).eq("id", g.id);
+  }
 }
