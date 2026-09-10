@@ -100,7 +100,7 @@ export default function AdminManager({ admins, meIsOwner }: { admins: AdminRow[]
                 </button>
               )}
               {meIsOwner && !a.isMe && a.role !== "owner" && (
-                <button className="btn btn-danger-soft btn-sm" disabled={pending} onClick={() => remove(a)}>Remover</button>
+                <button className="btn btn-danger-soft btn-sm" disabled={pending} onClick={() => remove(a)}>{pending && <Spinner size={14} />} Remover</button>
               )}
             </div>
           </div>

@@ -180,7 +180,7 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
                   onClick={() => startTransition(async () => {
                     const res = await activateSubscription(m.id);
                     if (res?.error) setError(res.error); else router.refresh();
-                  })}>Cobrar mensalidade</button>
+                  })}>{pending && <Spinner size={14} />} Cobrar mensalidade</button>
               ) : (
                 <button className="btn btn-outline btn-sm" disabled={pending}
                   onClick={() => {
@@ -189,9 +189,9 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
                       const res = await cancelSubscription(m.id);
                       if (res?.error) setError(res.error); else router.refresh();
                     });
-                  }}>Cancelar assinatura</button>
+                  }}>{pending && <Spinner size={14} />} Cancelar assinatura</button>
               )}
-              <button className="btn btn-danger-soft btn-sm" onClick={() => remove(m.id, m.name)} disabled={pending}>Remover</button>
+              <button className="btn btn-danger-soft btn-sm" onClick={() => remove(m.id, m.name)} disabled={pending}>{pending && <Spinner size={14} />} Remover</button>
             </div>
           </li>
         ))}

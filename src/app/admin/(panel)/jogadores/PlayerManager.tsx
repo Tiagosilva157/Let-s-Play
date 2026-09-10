@@ -100,7 +100,7 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
               {!p.active && <span className="badge badge-danger">Inativo</span>}
               <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => { setEditing(p); setShowForm(false); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</button>
               <button className={`btn btn-sm ${p.active ? "btn-danger-soft" : "btn-outline"}`} disabled={pending} onClick={() => toggle(p)}>
-                {p.active ? "Desativar" : "Reativar"}
+                {pending && <Spinner size={14} />} {p.active ? "Desativar" : "Reativar"}
               </button>
             </div>
           </div>
