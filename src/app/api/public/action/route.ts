@@ -159,10 +159,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 2b. com crédito: confirma direto, sem Pix — consome o crédito
-    if (result?.ok && !result.already_reserved && credit && (await claimCredit(credit.id, gameId))) {
+    // só quando a vaga foi de fato reservada agora — NUNCA para quem está (ou acabou de entrar) na lista de espera
+    if (result?.ok && !result.already_reserved && !result.waitlisted && !result.already_waitlisted && credit && (await claimCredit(credit.id, gameId))) {
       await db.from("game_participants")
         .update({ status: "confirmed", confirmed_at: new Date().toISOString(), source: "system" })
-        .eq("id", result.participant_id as string);
+        .eq("id", result.participant_id as string).eq("status", "reserved"); // trava extra: só reserva vira confirmada
       await db.from("audit_logs").insert({
         actor_type: "player", actor_id: player.id, action: "reserve_with_credit",
         entity: "credits", entity_id: credit.id, after: { gameId, amount: credit.amount },
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, credit_used: true, amount: credit.amount });
     }
 
-    if (result?.ok && !result.already_reserved) {
+    if (result?.ok && !result.already_reserved && !result.waitlisted && !result.already_waitlisted) {
       try {
         const customerId = await ensureAsaasCustomer(p!);
         const payment = await Asaas.createPixPayment({
