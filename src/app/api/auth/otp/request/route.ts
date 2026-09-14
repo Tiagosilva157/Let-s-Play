@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
     await GpConnect.sendTextMessage(phone, `🏐 Seu código de acesso: *${code}*\nVálido por 5 minutos. Não compartilhe.`);
   } catch (e) {
     console.error("OTP send failed", e);
-    return NextResponse.json({ error: "send_failed" }, { status: 502 });
+    // 200 de propósito: alguns proxies trocam respostas 5xx por uma página própria (sem JSON)
+    return NextResponse.json({ error: "send_failed" }, { status: 200 });
   }
 
   return NextResponse.json({ ok: true });

@@ -66,7 +66,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     code_expired: "Código expirado. Peça um novo.",
     too_many_requests: "Muitas tentativas. Aguarde alguns minutos.",
     too_many_attempts: "Muitas tentativas. Peça um novo código.",
-    send_failed: "Não conseguimos enviar o código. Tente novamente.",
+    send_failed: "Não conseguimos enviar o código pelo WhatsApp agora (falha no serviço de mensagens). Tente de novo em alguns minutos ou avise o organizador.",
     payment_provider_error: "Erro ao gerar o Pix. Tente novamente.",
     invalid_phone: "Telefone inválido. Use DDD + número.",
     server_error: "O sistema encontrou um problema ao processar. Tente novamente em instantes.",
