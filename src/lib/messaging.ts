@@ -21,13 +21,14 @@ function fmtMoney(v: number) {
 interface TeamInfo {
   id: string; name: string; address: string; capacity: number; dropin_fee: number;
   whatsapp_group_id: string | null; message_mode: string; batch_minutes: number; slug: string;
+  waitlist_minutes?: number | null;
 }
 
 async function loadGame(gameId: string) {
   const db = supabaseAdmin();
   const { data: g } = await db
     .from("games")
-    .select("id, date, time, address_override, capacity_override, status, confirm_until, teams(id, name, address, capacity, dropin_fee, whatsapp_group_id, message_mode, batch_minutes, slug)")
+    .select("id, date, time, address_override, capacity_override, status, confirm_until, teams(id, name, address, capacity, dropin_fee, whatsapp_group_id, message_mode, batch_minutes, slug, waitlist_minutes)")
     .eq("id", gameId)
     .maybeSingle();
   if (!g) return null;
@@ -138,7 +139,7 @@ function weekdayName(d: string) {
 /** Blocos da lista (Mensalistas / Não mensalistas / espera / rodapé) — usados
  *  tanto na mensagem de abertura quanto nas atualizações, para o grupo ver
  *  sempre a mesma estrutura. */
-function rosterLines(r: Roster): string[] {
+function rosterLines(r: Roster, waitlistMinutes = 60): string[] {
   const lines: string[] = [`*Mensalistas:* (${r.membersHolding} de ${r.members.length} na lista)`];
 
   if (r.members.length === 0) {
@@ -169,7 +170,7 @@ function rosterLines(r: Roster): string[] {
       : `🔴 *Lista completa — quem entrar agora vai para a lista de espera*`,
     r.dropinSlotsFree > 0
       ? `_Cada mensalista que avisar que não vem libera mais uma vaga._`
-      : `_Abriu vaga? O 1º da espera é avisado no WhatsApp e tem 1 hora para pagar o Pix._`,
+      : `_Abriu vaga? O 1º da espera é avisado no WhatsApp e tem ${fmtMinutes(waitlistMinutes)} para pagar o Pix._`,
   );
 
   return lines;
@@ -188,7 +189,7 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
     ``,
     `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
     ``,
-    ...rosterLines(r),
+    ...rosterLines(r, t.waitlist_minutes ?? 60),
   ];
 
   if (link) lines.push(``, `👉 Confirme sua presença: ${link}`);
@@ -262,7 +263,7 @@ export async function enqueueListOpened(gameId: string) {
     `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
     `👥 ${r.capacity} vagas no total`,
     ``,
-    ...rosterLines(r),
+    ...rosterLines(r, t.waitlist_minutes ?? 60),
     ``,
     `*Mensalistas:* confirmem se vão jogar até ${prazo}. Quem avisar que não vem libera a vaga.`,
     `*Não mensalistas:* garantam a vaga pagando o Pix pelo link — a vaga só é confirmada após o pagamento.`,
