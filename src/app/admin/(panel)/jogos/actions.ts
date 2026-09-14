@@ -78,18 +78,61 @@ export async function adminAddPlayer(gameId: string, playerId: string) {
 export async function adminRemove(gameId: string, playerId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
-  const { data: pl } = await db.from("players").select("name").eq("id", playerId).maybeSingle();
-  // idempotente: clique repetido (ou tela atrasada) não remove nem anuncia duas vezes
-  const { data: removedRows } = await db.from("game_participants").update({ status: "removed", source: "admin" })
+  const { data: pl } = await db.from("players").select("name, phone").eq("id", playerId).maybeSingle();
+  const { data: g } = await db.from("games").select("team_id, date, teams(name, whatsapp_group_id)").eq("id", gameId).maybeSingle();
+  const teamInfo = g?.teams as unknown as { name: string; whatsapp_group_id: string | null } | null;
+
+  // avulso que JÁ PAGOU: segue a mesma regra da desistência pelo link — o valor
+  // vira crédito na hora (o admin ainda pode devolver em dinheiro na tela do jogo)
+  const { data: paid } = await db.from("charges").select("id, amount")
+    .eq("game_id", gameId).eq("player_id", playerId).eq("type", "dropin")
+    .in("status", ["received", "confirmed"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+  // idempotente: clique repetido (ou tela atrasada) não remove nem anuncia duas vezes.
+  // Pago → 'withdrawn' (aparece em "Outros" com crédito/estorno); senão → 'removed'.
+  const { data: removedRows } = await db.from("game_participants")
+    .update({ status: paid ? "withdrawn" : "removed", source: "admin" })
     .eq("game_id", gameId).eq("player_id", playerId)
     .in("status", ["confirmed", "reserved", "waitlist", "invited"])
-    .select("id");
+    .select("id, status");
   if (!removedRows?.length) { revalidatePath(`/admin/jogos/${gameId}`); return; }
+
+  // Pix pendente (reserva não paga) → cancela no Asaas para não ficar cobrança órfã
+  const { data: pending } = await db.from("charges").select("id, asaas_payment_id")
+    .eq("game_id", gameId).eq("player_id", playerId).eq("status", "pending").maybeSingle();
+  if (pending) {
+    if (pending.asaas_payment_id) await Asaas.cancelPayment(pending.asaas_payment_id).catch(() => {});
+    await db.from("charges").update({ status: "canceled" }).eq("id", pending.id);
+  }
+
+  let creditNote = "";
+  if (paid && g && pl) {
+    const dateBR = g.date.split("-").reverse().join("/");
+    const amountBR = `R$ ${Number(paid.amount).toFixed(2).replace(".", ",")}`;
+    try {
+      const { grantCreditForCharge } = await import("@/lib/credits");
+      const { enqueueIndividual } = await import("@/lib/messaging");
+      const credit = await grantCreditForCharge({
+        playerId, teamId: g.team_id, amount: Number(paid.amount), chargeId: paid.id,
+        reason: `Retirado da lista pelo organizador — jogo ${dateBR}`, createdBy: admin.id, refundable: true,
+      });
+      creditNote = " O valor pago virou crédito para o próximo jogo.";
+      if (credit.created) {
+        await enqueueIndividual(g.team_id, pl.phone, [
+          `✅ ${pl.name.split(" ")[0]}, o organizador retirou você da lista do *${teamInfo?.name ?? ""}* de ${dateBR}.`,
+          ``,
+          `Os *${amountBR}* que você pagou viraram *crédito*: na próxima vez que garantir vaga, a presença é confirmada sem pagar de novo. 🎫`,
+        ].join("\n")).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[credit] remoção manual:", String(e).slice(0, 150));
+    }
+  }
+
   // avisa o grupo da retirada manual
-  const { data: g } = await db.from("games").select("team_id, teams(whatsapp_group_id)").eq("id", gameId).maybeSingle();
-  const grp = (g?.teams as unknown as { whatsapp_group_id: string | null } | null)?.whatsapp_group_id;
-  if (grp && pl) {
-    await enqueueGroupMessage(g!.team_id, grp, `➖ *${pl.name}* foi retirado da lista pelo organizador.`, gameId).catch(() => {});
+  const grp = teamInfo?.whatsapp_group_id;
+  if (grp && pl && g) {
+    await enqueueGroupMessage(g.team_id, grp, `➖ *${pl.name}* foi retirado da lista pelo organizador.${creditNote}`, gameId).catch(() => {});
   }
   const { data: promo } = await db.rpc("fn_promote_waitlist", { p_game_id: gameId });
   await auditAdmin(admin.id, "admin_remove", "game_participants", `${gameId}:${playerId}`);
