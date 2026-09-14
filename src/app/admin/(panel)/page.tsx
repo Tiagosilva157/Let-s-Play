@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { todayBR } from "@/lib/dates";
+import FailedMessages, { type FailedRow } from "./mensagens/FailedMessages";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,20 @@ export default async function Dashboard() {
     db.from("games").select("id, date, time, status, teams(name)").gte("date", today).in("status", ["scheduled", "open", "closed"]).order("date").limit(6),
     db.from("team_members").select("id", { count: "exact", head: true }).eq("subscription_status", "overdue").eq("status", "active"),
     db.from("game_participants").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
-    db.from("message_dispatches").select("id", { count: "exact", head: true }).eq("status", "failed"),
+    db.from("message_dispatches").select("id, kind, recipient, body, error, created_at").eq("status", "failed")
+      .gte("created_at", new Date(Date.now() - 48 * 3600e3).toISOString()).order("created_at", { ascending: false }).limit(50),
   ]);
+
+  // nomes dos destinatários das falhas + telefone do admin para o botão de teste
+  const failedRows = failedMsgs.data ?? [];
+  const phones = [...new Set(failedRows.filter((r) => r.kind === "individual").map((r) => r.recipient))];
+  const { data: named } = phones.length ? await db.from("players").select("name, phone").in("phone", phones) : { data: [] };
+  const nameOf = new Map((named ?? []).map((p) => [p.phone, p.name]));
+  const failed: FailedRow[] = failedRows.map((r) => ({
+    id: r.id, kind: r.kind, recipient: r.recipient, recipientName: nameOf.get(r.recipient) ?? null,
+    body: r.body, error: r.error, createdAt: r.created_at,
+  }));
+  const { data: adminRow } = await db.from("players").select("phone").eq("name", "Tiago Silva").limit(1).maybeSingle();
 
   const gameIds = (games.data ?? []).map((g) => g.id);
   const { data: counts } = gameIds.length
@@ -26,7 +39,7 @@ export default async function Dashboard() {
   const alerts: { text: string; href: string }[] = [];
   if ((overdue.count ?? 0) > 0) alerts.push({ text: `${overdue.count} mensalista(s) inadimplente(s)`, href: "/admin/financeiro" });
   if ((pendingReview.count ?? 0) > 0) alerts.push({ text: `${pendingReview.count} pagamento(s) recebido(s) com lista cheia — decidir crédito/estorno`, href: "/admin/jogos" });
-  if ((failedMsgs.count ?? 0) > 0) alerts.push({ text: `${failedMsgs.count} mensagem(ns) de WhatsApp falharam`, href: "/admin/jogos" });
+  if (failed.length > 0) alerts.push({ text: `${failed.length} mensagem(ns) de WhatsApp falharam nas últimas 48h — veja abaixo (a conexão pode ter caído)`, href: "#mensagens" });
 
   return (
     <div className="space-y-6">
@@ -47,6 +60,10 @@ export default async function Dashboard() {
         <div className="card p-4"><p className="text-2xl font-bold">{games.data?.length ?? 0}</p><p className="text-sm text-[var(--ink-soft)]">Próximos jogos</p></div>
         <div className="card p-4"><p className="text-2xl font-bold">{overdue.count ?? 0}</p><p className="text-sm text-[var(--ink-soft)]">Inadimplentes</p></div>
       </div>
+
+      {failed.length > 0 && (
+        <div id="mensagens"><FailedMessages rows={failed} adminPhone={adminRow?.phone ?? ""} /></div>
+      )}
 
       <section>
         <h2 className="mb-3 font-bold">Próximos jogos</h2>
