@@ -197,15 +197,30 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
   return { body: lines.join("\n"), team: t };
 }
 
+/** Canal dos avisos individuais da turma ("whatsapp" | "portal"). */
+export async function individualChannel(teamId: string): Promise<"whatsapp" | "portal"> {
+  const db = supabaseAdmin();
+  const { data } = await db.from("teams").select("individual_channel").eq("id", teamId).maybeSingle();
+  return data?.individual_channel === "portal" ? "portal" : "whatsapp";
+}
+
 /** Insere na fila e tenta despachar na hora (respeitando o modo da turma). */
 async function enqueue(row: {
   team_id: string | null; game_id?: string | null; kind: "group" | "individual";
   recipient: string; body: string; dedupe_key?: string | null; delayMinutes?: number;
   /** false quando outra mensagem da mesma sequência vai disparar o envio */
   dispatch?: boolean;
+  /** true = sai mesmo com a turma em modo "portal" (ex.: subiu da lista de espera e precisa pagar) */
+  essential?: boolean;
 }) {
   const db = supabaseAdmin();
   const delay = row.delayMinutes ?? 0;
+
+  // Turma em modo "portal": avisos individuais não vão ao WhatsApp — o jogador
+  // vê tudo no link. Só passa o que for marcado como essencial.
+  if (row.kind === "individual" && !row.essential && row.team_id) {
+    if (await individualChannel(row.team_id) === "portal") return;
+  }
 
   if (row.dedupe_key) {
     // substitui a mensagem pendente equivalente (debounce)
@@ -288,22 +303,29 @@ export async function enqueueListOpened(gameId: string) {
 export async function sendPixToPlayer(opts: {
   teamId: string; phone: string; playerName: string; teamName: string;
   date: string; time: string; amount: number; copypaste: string; minutes: number;
+  /** subiu da lista de espera: sai mesmo em modo "portal" e cita o link */
+  fromWaitlist?: boolean; slug?: string;
 }) {
+  const link = opts.slug ? publicLink(opts.slug) : "";
   const intro = [
     `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
     ``,
-    `Sua vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} está reservada por *${fmtMinutes(opts.minutes)}*.`,
+    opts.fromWaitlist
+      ? `Abriu vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} e ela é sua! Você tem *${fmtMinutes(opts.minutes)}* para pagar.`
+      : `Sua vaga no *${opts.teamName}* de ${fmtDate(opts.date)} às ${String(opts.time).slice(0, 5)} está reservada por *${fmtMinutes(opts.minutes)}*.`,
     ``,
     `Valor: *${fmtMoney(opts.amount)}*`,
     ``,
     `📋 O código Pix vem na *próxima mensagem*: toque nela, segure e escolha _Copiar_ — depois é só colar no seu banco.`,
+    ...(link ? [`Ou pague pelo link, entrando com seu telefone: ${link}`] : []),
     ``,
     `Assim que o pagamento for identificado, sua presença é confirmada automaticamente. ✅`,
   ].join("\n");
 
+  const essential = !!opts.fromWaitlist;
   // primeira mensagem não dispara: a segunda dispara as duas, mantendo a ordem
-  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false });
-  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim() });
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: intro, dispatch: false, essential });
+  await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), essential });
 }
 
 /** Avisa o jogador que o pagamento foi confirmado. */
@@ -348,8 +370,8 @@ export async function sendMembershipDueReminder(opts: {
   await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: key });
 }
 
-export async function enqueueIndividual(teamId: string | null, phone: string, body: string) {
-  await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body });
+export async function enqueueIndividual(teamId: string | null, phone: string, body: string, opts?: { essential?: boolean }) {
+  await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body, essential: opts?.essential });
 }
 
 export async function enqueueGroupMessage(teamId: string, groupId: string, body: string, gameId?: string) {

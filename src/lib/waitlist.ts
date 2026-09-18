@@ -128,6 +128,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
         teamId: team.id, phone: pl.phone, playerName: pl.name, teamName: team.name,
         date: game.date, time: String(game.time), amount: Number(team.dropin_fee),
         copypaste: qr.payload, minutes: team.waitlist_minutes ?? 60,
+        fromWaitlist: true, slug: team.slug,
       });
       pixSent = true;
     } catch (e) {
@@ -144,7 +145,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
         ``,
         `Acesse o link para gerar o pagamento:`,
         `👉 ${link}`,
-      ].join("\n")).catch(() => {});
+      ].join("\n"), { essential: true }).catch(() => {});
     }
   }
 

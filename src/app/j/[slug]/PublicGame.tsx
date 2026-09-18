@@ -12,7 +12,7 @@ interface Game {
 }
 interface Participant { display_name: string; kind: string; status: string }
 interface Player { id: string; name: string }
-interface Pix { qr: string; copypaste: string; amount: number }
+interface Pix { qr: string; copypaste: string; amount: number; expiresAt?: string | null }
 
 function fmtDate(d: string) {
   return new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
@@ -21,13 +21,14 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null }: {
+export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null }: {
   game: Game;
   participants: Participant[];
   player: Player | null;
   myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null;
   isMember: boolean;
   credit?: number | null; // crédito disponível do avulso nesta turma (cobre a taxa)
+  pendingPix?: Pix | null; // Pix em aberto ao abrir a página (reserva/promoção)
 }) {
   // prazo de desistência avaliado já na renderização (não só ao clicar)
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
@@ -39,7 +40,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   const [name, setName] = useState("");
   const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
-  const [pix, setPix] = useState<Pix | null>(null);
+  const [pix, setPix] = useState<Pix | null>(pendingPix);
   const [loading, setLoading] = useState(false);
   const [refreshing, startRefresh] = useTransition();
   const [error, setError] = useState("");
@@ -200,7 +201,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
       {pix && (
         <div className="card p-5 space-y-3 text-center">
           <h2 className="font-bold text-lg">Pague para garantir sua vaga</h2>
-          <p className="text-sm text-[var(--ink-soft)]">Sua vaga fica reservada por <b>15 minutos</b>.</p>
+          <p className="text-sm text-[var(--ink-soft)]">
+            {pix.expiresAt
+              ? <>Pague até <b>{new Date(pix.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b> para garantir a vaga.</>
+              : <>Sua vaga fica reservada por <b>15 minutos</b>.</>}
+          </p>
           <p className="text-2xl font-bold">{fmtMoney(Number(pix.amount))}</p>
           {pix.qr && (
             // eslint-disable-next-line @next/next/no-img-element

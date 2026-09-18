@@ -19,6 +19,7 @@ const TeamSchema = z.object({
   withdraw_hours_before: z.coerce.number().int().min(0).max(720),
   whatsapp_group_id: z.string().max(120).optional().or(z.literal("")),
   message_mode: z.enum(["instant", "batched", "scheduled", "manual"]),
+  individual_channel: z.enum(["whatsapp", "portal"]).default("whatsapp"),
 });
 
 export async function saveTeam(id: string | null, formData: FormData) {

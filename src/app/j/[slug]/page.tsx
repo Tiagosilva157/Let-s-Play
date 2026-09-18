@@ -32,6 +32,9 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
   let myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null = null;
   let isMember = false;
   let credit: number | null = null;
+  // Pix em aberto (reserva ou promoção da fila): mostrado direto na tela — o
+  // jogador não depende de mensagem no WhatsApp para pagar
+  let pendingPix: { qr: string; copypaste: string; amount: number; expiresAt: string | null } | null = null;
   if (player) {
     const { data: gp } = await db
       .from("game_participants")
@@ -40,6 +43,13 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
       .eq("player_id", player.id)
       .maybeSingle();
     myStatus = gp ?? null;
+    if (gp?.status === "reserved") {
+      const { data: ch } = await db.from("charges")
+        .select("pix_qr, pix_copypaste, amount, expires_at")
+        .eq("game_id", game.game_id).eq("player_id", player.id).eq("status", "pending")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (ch?.pix_copypaste) pendingPix = { qr: ch.pix_qr ?? "", copypaste: ch.pix_copypaste, amount: Number(ch.amount), expiresAt: ch.expires_at ?? null };
+    }
     const { data: teamRow } = await db.from("teams").select("id").eq("slug", slug).single();
     if (teamRow) {
       const { data: m } = await db
@@ -66,6 +76,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
       myStatus={myStatus}
       isMember={isMember}
       credit={credit}
+      pendingPix={pendingPix}
     />
   );
 }

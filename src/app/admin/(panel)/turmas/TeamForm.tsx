@@ -11,7 +11,7 @@ export interface TeamValues {
   id?: string; name?: string; slug?: string; weekday?: number; game_time?: string;
   address?: string; capacity?: number; monthly_fee?: number; dropin_fee?: number;
   open_hours_before?: number; confirm_hours_before?: number; withdraw_hours_before?: number;
-  whatsapp_group_id?: string | null; message_mode?: string;
+  whatsapp_group_id?: string | null; message_mode?: string; individual_channel?: string;
 }
 
 export default function TeamForm({ team }: { team?: TeamValues }) {
@@ -64,6 +64,13 @@ export default function TeamForm({ team }: { team?: TeamValues }) {
           <option value="batched">Agrupado (a cada poucos minutos)</option>
           <option value="manual">Somente manual</option>
         </select>
+      </Field>
+      <Field label="Avisos individuais ao jogador">
+        <select name="individual_channel" className="input" defaultValue={t.individual_channel ?? "whatsapp"}>
+          <option value="whatsapp">WhatsApp no privado (Pix, confirmações, créditos, mensalidade)</option>
+          <option value="portal">Só pelo link (WhatsApp apenas quando sobe da lista de espera)</option>
+        </select>
+        <p className="mt-1 text-xs text-[var(--ink-soft)]">"Só pelo link" reduz muito o volume de mensagens do número. O grupo continua recebendo a lista normalmente.</p>
       </Field>
 
       <button className="btn btn-primary" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : team?.id ? "Salvar alterações" : "Criar turma"}</button>
