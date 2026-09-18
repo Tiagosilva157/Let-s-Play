@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import PhoneInput, { isCompleteMobile } from "@/components/PhoneInput";
@@ -21,7 +21,7 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null }: {
+export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "" }: {
   game: Game;
   participants: Participant[];
   player: Player | null;
@@ -29,12 +29,21 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   isMember: boolean;
   credit?: number | null; // crédito disponível do avulso nesta turma (cobre a taxa)
   pendingPix?: Pix | null; // Pix em aberto ao abrir a página (reserva/promoção)
+  slug?: string;
 }) {
   // prazo de desistência avaliado já na renderização (não só ao clicar)
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
   const withdrawDeadline = new Date(game.withdraw_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const router = useRouter();
-  const [step, setStep] = useState<"idle" | "phone" | "code" | "name" | "billing">("idle");
+  const [step, setStep] = useState<"idle" | "phone" | "code" | "name" | "billing" | "password" | "cpf" | "setpassword" | "forgot_sent" | "reset">("idle");
+  // login por senha (o código no WhatsApp fica como caminho reserva)
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [loginCpf, setLoginCpf] = useState("");
+  const [emailHint, setEmailHint] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -49,6 +58,12 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   const [intent, setIntent] = useState<"play" | "skip" | null>(null);
   const [intentNote, setIntentNote] = useState("");
   const busy = loading || refreshing;
+
+  // chegou pelo link do e-mail de "esqueci a senha"? (?reset=TOKEN)
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("reset");
+    if (t && t.length >= 20) { setResetToken(t); setStep("reset"); }
+  }, []);
 
   // mantém o indicador girando até a tela realmente atualizar
   const refresh = () => startRefresh(() => router.refresh());
@@ -71,6 +86,14 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     payment_provider_error: "Erro ao gerar o Pix. Tente novamente.",
     invalid_phone: "Telefone inválido. Use DDD + número.",
     server_error: "O sistema encontrou um problema ao processar. Tente novamente em instantes.",
+    wrong_password: "Senha incorreta. Tente de novo ou use \"Esqueci minha senha\".",
+    cpf_mismatch: "CPF não confere com o cadastro deste telefone. Se preferir, entre com o código no WhatsApp.",
+    no_email: "Não temos seu e-mail cadastrado. Entre com o código no WhatsApp e cadastre um e-mail ao criar a senha.",
+    email_failed: "Não conseguimos enviar o e-mail agora. Tente de novo ou entre com o código no WhatsApp.",
+    reset_invalid: "Este link de redefinição expirou ou já foi usado. Peça um novo em \"Esqueci minha senha\".",
+    weak_password: "A senha precisa ter pelo menos 6 caracteres.",
+    invalid_email: "E-mail inválido.",
+    player_inactive: "Seu cadastro está desativado. Fale com o organizador.",
   };
 
   async function api(path: string, body: unknown) {
@@ -104,11 +127,10 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     if (data) setStep("code");
   }
 
-  async function verifyOtp(withName?: string) {
-    const data = await api("/api/auth/otp/verify", { phone, code, name: withName });
-    if (!data) return;
-    if (data.needs_name) { setStep("name"); return; }
+  /** Depois de entrar (por senha, CPF, código ou link de e-mail): cumpre a intenção e atualiza. */
+  async function afterLogin() {
     setStep("idle");
+    setPassword(""); setNewPassword(""); setLoginCpf("");
     // cumpre o que a pessoa escolheu na primeira tela ANTES de atualizar,
     // para não haver duas atualizações concorrentes (a antiga venceria)
     if (intent) {
@@ -118,6 +140,65 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
       return;
     }
     refresh();
+  }
+
+  /** Telefone informado: descobre como entrar (senha, CPF ou código no WhatsApp). */
+  async function continueWithPhone() {
+    const data = await api("/api/auth/lookup", { phone });
+    if (!data) return;
+    setFirstName(data.firstName ?? "");
+    setEmailHint(data.emailHint ?? null);
+    if (data.method === "password") { setStep("password"); return; }
+    if (data.method === "cpf") { setNeedsPassword(true); setStep("cpf"); return; }
+    setNeedsPassword(true); // sem senha ainda: depois do código, sugerimos criar uma
+    await requestOtp();
+  }
+
+  async function loginWithPassword() {
+    const data = await api("/api/auth/login", { phone, password });
+    if (data) await afterLogin();
+  }
+
+  async function firstAccessWithCpf() {
+    const data = await api("/api/auth/first-access", { phone, cpf: loginCpf });
+    if (!data) return;
+    if (data.email) setEmail(data.email);
+    if (data.needs_password) { setStep("setpassword"); return; }
+    await afterLogin();
+  }
+
+  async function savePassword(skip = false) {
+    if (!skip) {
+      const data = await api("/api/auth/set-password", { password: newPassword, email: email || undefined });
+      if (!data) return;
+    }
+    setNeedsPassword(false);
+    await afterLogin();
+  }
+
+  async function forgotPassword() {
+    const data = await api("/api/auth/forgot", { phone, slug });
+    if (!data) return;
+    setEmailHint(data.emailHint ?? emailHint);
+    setStep("forgot_sent");
+  }
+
+  async function resetWithToken() {
+    if (!resetToken) return;
+    const data = await api("/api/auth/reset", { token: resetToken, password: newPassword });
+    if (!data) return;
+    setResetToken(null);
+    window.history.replaceState(null, "", window.location.pathname);
+    await afterLogin();
+  }
+
+  async function verifyOtp(withName?: string) {
+    const data = await api("/api/auth/otp/verify", { phone, code, name: withName });
+    if (!data) return;
+    if (data.needs_name) { setStep("name"); return; }
+    // quem ainda não tem senha cria uma agora (opcional) — próximo acesso sem código
+    if (needsPassword) { setStep("setpassword"); return; }
+    await afterLogin();
   }
 
   /**
@@ -248,7 +329,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                     ❌ Não vou participar
                   </button>
                   <p className="text-center text-xs text-[var(--ink-soft)]">
-                    Nos dois casos é rapidinho: confirmamos seu WhatsApp e registramos sua resposta.
+                    Nos dois casos é rapidinho: você entra com seu telefone e registramos sua resposta.
                   </p>
                 </>
               )}
@@ -259,8 +340,78 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
             <>
               <label className="text-sm font-medium">Seu WhatsApp</label>
               <PhoneInput value={phone} onChange={setPhone} autoFocus />
-              <button className="btn btn-primary" onClick={requestOtp} disabled={busy || !isCompleteMobile(phone)}>
-                {busy ? <><Spinner /> Enviando...</> : "Receber código no WhatsApp"}
+              <button className="btn btn-primary" onClick={continueWithPhone} disabled={busy || !isCompleteMobile(phone)}>
+                {busy ? <><Spinner /> Verificando...</> : "Continuar"}
+              </button>
+              <p className="text-center text-xs text-[var(--ink-soft)]">
+                Se você já tem senha, vamos pedi-la. Se não, criamos seu acesso agora.
+              </p>
+            </>
+          )}
+
+          {step === "password" && (
+            <>
+              <p className="text-sm">Olá{firstName ? <>, <b>{firstName}</b></> : ""}! Digite sua senha.</p>
+              <input className="input" type="password" placeholder="Sua senha" value={password} autoFocus
+                onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && password) loginWithPassword(); }} />
+              <button className="btn btn-primary" onClick={loginWithPassword} disabled={busy || !password}>
+                {busy ? <><Spinner /> Entrando...</> : "Entrar"}
+              </button>
+              <div className="flex flex-wrap justify-between gap-2 text-xs">
+                <button type="button" className="underline text-[var(--ink-soft)]" disabled={busy} onClick={forgotPassword}>Esqueci minha senha</button>
+                <button type="button" className="underline text-[var(--ink-soft)]" disabled={busy} onClick={() => { setNeedsPassword(false); requestOtp(); }}>Entrar com código no WhatsApp</button>
+              </div>
+            </>
+          )}
+
+          {step === "cpf" && (
+            <>
+              <p className="text-sm">Olá{firstName ? <>, <b>{firstName}</b></> : ""}! Para o primeiro acesso, confirme seu <b>CPF</b> (o mesmo do cadastro):</p>
+              <input className="input" inputMode="numeric" placeholder="CPF (somente números)" value={loginCpf} autoFocus
+                onChange={(e) => setLoginCpf(e.target.value.replace(/\D/g, "").slice(0, 14))} />
+              <button className="btn btn-primary" onClick={firstAccessWithCpf} disabled={busy || loginCpf.length < 11}>
+                {busy ? <><Spinner /> Verificando...</> : "Continuar"}
+              </button>
+              <button type="button" className="text-xs underline text-[var(--ink-soft)]" disabled={busy} onClick={requestOtp}>
+                Prefiro receber um código no WhatsApp
+              </button>
+            </>
+          )}
+
+          {step === "setpassword" && (
+            <>
+              <p className="text-sm font-medium">Crie uma senha para os próximos acessos</p>
+              <p className="text-xs text-[var(--ink-soft)]">Com ela você entra direto, sem esperar código no WhatsApp.</p>
+              <input className="input" type="password" placeholder="Nova senha (mínimo 6 caracteres)" value={newPassword} autoFocus
+                onChange={(e) => setNewPassword(e.target.value)} />
+              <input className="input" type="email" placeholder="Seu e-mail (para recuperar a senha)" value={email}
+                onChange={(e) => setEmail(e.target.value)} />
+              <button className="btn btn-primary" onClick={() => savePassword()} disabled={busy || newPassword.length < 6}>
+                {busy ? <><Spinner /> Salvando...</> : "Salvar e continuar"}
+              </button>
+              <button type="button" className="text-xs underline text-[var(--ink-soft)]" disabled={busy} onClick={() => savePassword(true)}>
+                Agora não, continuar sem senha
+              </button>
+            </>
+          )}
+
+          {step === "forgot_sent" && (
+            <>
+              <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm text-[var(--success)]">
+                📧 Enviamos um link para <b>{emailHint ?? "seu e-mail"}</b>. Abra o e-mail e toque em "Criar nova senha" (vale por 1 hora).
+              </p>
+              <p className="text-xs text-[var(--ink-soft)]">Não chegou? Veja a caixa de spam ou <button type="button" className="underline" disabled={busy} onClick={() => { setNeedsPassword(false); requestOtp(); }}>entre com código no WhatsApp</button>.</p>
+              <button className="btn btn-outline" onClick={() => setStep("password")}>Voltar</button>
+            </>
+          )}
+
+          {step === "reset" && (
+            <>
+              <p className="text-sm font-medium">Crie sua nova senha</p>
+              <input className="input" type="password" placeholder="Nova senha (mínimo 6 caracteres)" value={newPassword} autoFocus
+                onChange={(e) => setNewPassword(e.target.value)} />
+              <button className="btn btn-primary" onClick={resetWithToken} disabled={busy || newPassword.length < 6}>
+                {busy ? <><Spinner /> Salvando...</> : "Salvar nova senha e entrar"}
               </button>
             </>
           )}
@@ -306,7 +457,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
             </>
           )}
 
-          {player && step !== "billing" && (
+          {player && !["billing", "reset", "setpassword"].includes(step) && (
             <>
               <p className="text-sm">Olá, <b>{player.name.split(" ")[0]}</b>! 👋</p>
               {intentNote && (

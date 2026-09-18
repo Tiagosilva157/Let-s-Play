@@ -77,6 +77,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
       isMember={isMember}
       credit={credit}
       pendingPix={pendingPix}
+      slug={slug}
     />
   );
 }
