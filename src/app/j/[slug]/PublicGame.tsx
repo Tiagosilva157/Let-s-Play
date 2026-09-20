@@ -4,6 +4,8 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import PhoneInput, { isCompleteMobile } from "@/components/PhoneInput";
+import MySituation from "./MySituation";
+import type { Situation } from "@/lib/my-situation";
 
 interface Game {
   game_id: string; team_name: string; date: string; time: string; address: string;
@@ -21,7 +23,7 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "" }: {
+export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "", situation = null }: {
   game: Game;
   participants: Participant[];
   player: Player | null;
@@ -30,6 +32,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   credit?: number | null; // crédito disponível do avulso nesta turma (cobre a taxa)
   pendingPix?: Pix | null; // Pix em aberto ao abrir a página (reserva/promoção)
   slug?: string;
+  situation?: Situation | null;
 }) {
   // prazo de desistência avaliado já na renderização (não só ao clicar)
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
@@ -576,6 +579,9 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
           )}
         </div>
       )}
+
+      {/* Minha situação: mensalidade, pendências, créditos e histórico — sem depender de WhatsApp */}
+      {player && situation && step === "idle" && <MySituation s={situation} />}
 
       {/* Lista de confirmados */}
       <div className="card p-5">

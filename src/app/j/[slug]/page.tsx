@@ -3,6 +3,7 @@ import { getSessionPlayer } from "@/lib/session";
 import { todayBR } from "@/lib/dates";
 import { notFound } from "next/navigation";
 import PublicGame from "./PublicGame";
+import { loadSituation, type Situation } from "@/lib/my-situation";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
   // Pix em aberto (reserva ou promoção da fila): mostrado direto na tela — o
   // jogador não depende de mensagem no WhatsApp para pagar
   let pendingPix: { qr: string; copypaste: string; amount: number; expiresAt: string | null } | null = null;
+  let situation: Situation | null = null;
   if (player) {
     const { data: gp } = await db
       .from("game_participants")
@@ -60,6 +62,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
         .eq("status", "active")
         .maybeSingle();
       isMember = !!m;
+      situation = await loadSituation(player.id, teamRow.id);
       if (!isMember) {
         const { peekCredit } = await import("@/lib/credits");
         const c = await peekCredit(player.id, teamRow.id, Number(game.dropin_fee));
@@ -78,6 +81,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
       credit={credit}
       pendingPix={pendingPix}
       slug={slug}
+      situation={situation}
     />
   );
 }
