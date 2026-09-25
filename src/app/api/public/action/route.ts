@@ -29,10 +29,14 @@ export async function POST(req: NextRequest) {
 
   const { data: game } = await db
     .from("games")
-    .select("id, team_id, date, time, teams(dropin_fee, name, reservation_minutes, waitlist_minutes)")
+    .select("id, team_id, date, time, members_pay, dropin_fee_override, teams(dropin_fee, name, reservation_minutes, waitlist_minutes)")
     .eq("id", gameId)
     .single();
   if (!game) return NextResponse.json({ error: "game_not_found" }, { status: 404 });
+  // jogo único com valor próprio: vale para Pix, crédito e mensagens daqui em diante
+  if (game.dropin_fee_override != null) {
+    (game.teams as unknown as { dropin_fee: number }).dropin_fee = Number(game.dropin_fee_override);
+  }
 
   const { data: membership } = await db
     .from("team_members")
@@ -41,7 +45,8 @@ export async function POST(req: NextRequest) {
     .eq("player_id", player.id)
     .eq("status", "active")
     .maybeSingle();
-  const isMember = !!membership;
+  // jogo em que mensalista paga: ele entra pelo fluxo de avulso (Pix)
+  const isMember = !!membership && !game.members_pay;
 
   let result: { ok: boolean; error?: string; [k: string]: unknown };
 

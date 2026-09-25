@@ -10,7 +10,7 @@ import { Asaas } from "@/lib/asaas";
 import { ensureAsaasCustomer } from "@/lib/asaas-customer";
 import {
   enqueueGroupMessage, enqueueIndividual, enqueueListUpdate,
-  sendPixToPlayer, publicLink, fmtMinutes,
+  sendPixToPlayer, gameLink, fmtMinutes,
 } from "@/lib/messaging";
 
 interface PromotedInfo {
@@ -35,16 +35,19 @@ async function loadContext(gameId: string) {
   const db = supabaseAdmin();
   const { data: g } = await db
     .from("games")
-    .select("id, date, time, team_id, teams(id, name, slug, dropin_fee, reservation_minutes, waitlist_minutes, whatsapp_group_id, message_mode)")
+    .select("id, date, time, team_id, generated, dropin_fee_override, teams(id, name, slug, dropin_fee, reservation_minutes, waitlist_minutes, whatsapp_group_id, message_mode)")
     .eq("id", gameId)
     .maybeSingle();
   if (!g) return null;
+  const base = g.teams as unknown as {
+    id: string; name: string; slug: string; dropin_fee: number;
+    reservation_minutes: number; waitlist_minutes: number; whatsapp_group_id: string | null; message_mode: string;
+  };
   return {
     game: g,
-    team: g.teams as unknown as {
-      id: string; name: string; slug: string; dropin_fee: number;
-      reservation_minutes: number; waitlist_minutes: number; whatsapp_group_id: string | null; message_mode: string;
-    },
+    // jogo único: valor próprio já aplicado na cópia da turma
+    team: { ...base, dropin_fee: Number(g.dropin_fee_override ?? base.dropin_fee) },
+    link: gameLink(base.slug, g.id, g.generated === false),
   };
 }
 
@@ -59,7 +62,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
   const db = supabaseAdmin();
   const ctx = await loadContext(gameId);
   if (!ctx) return;
-  const { game, team } = ctx;
+  const { game, team, link: gameUrl } = ctx;
 
   const { data: parts } = await db
     .from("game_participants")
@@ -128,7 +131,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
         teamId: team.id, phone: pl.phone, playerName: pl.name, teamName: team.name,
         date: game.date, time: String(game.time), amount: Number(team.dropin_fee),
         copypaste: qr.payload, minutes: team.waitlist_minutes ?? 60,
-        fromWaitlist: true, slug: team.slug,
+        fromWaitlist: true, link: gameUrl,
       });
       pixSent = true;
     } catch (e) {
@@ -137,7 +140,7 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
 
     // 2. sem CPF (ou falha no Asaas): manda o link para concluir por lá
     if (!pixSent) {
-      const link = publicLink(team.slug);
+      const link = gameUrl;
       await enqueueIndividual(team.id, pl.phone, [
         `🎉 ${firstName(pl.name)}, abriu vaga no *${team.name}* de ${fmtDate(game.date)}!`,
         ``,
@@ -190,7 +193,7 @@ export async function processExpirations(expired: ExpiredRow[] | null | undefine
 
     const ctx = await loadContext(row.game_id);
     if (!ctx) continue;
-    const { team } = ctx;
+    const { team, link: gameUrl } = ctx;
     const { data: pl } = await db.from("players").select("name, phone").eq("id", row.player_id).maybeSingle();
     if (!pl) continue;
 
@@ -211,7 +214,7 @@ export async function processExpirations(expired: ExpiredRow[] | null | undefine
       }
     } else {
       // reserva comum que venceu: avisa que a vaga voltou e que pode tentar de novo
-      const link = publicLink(team.slug);
+      const link = gameUrl;
       await enqueueIndividual(team.id, pl.phone, [
         `⏰ ${firstName(pl.name)}, o prazo de 15 minutos para pagar sua vaga no *${team.name}* terminou e a reserva foi cancelada.`,
         ``,

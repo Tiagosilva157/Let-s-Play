@@ -7,21 +7,29 @@ import { loadSituation, type Situation } from "@/lib/my-situation";
 
 export const dynamic = "force-dynamic";
 
-export default async function PublicTeamPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PublicTeamPage({ params, searchParams }: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ jogo?: string }>;
+}) {
   const { slug } = await params;
+  const { jogo } = await searchParams;
   const db = supabaseAdmin();
 
-  // próximo jogo visível da turma
-  const { data: game } = await db
+  // próximos jogos visíveis da turma (recorrentes + jogos únicos)
+  const { data: upcoming } = await db
     .from("public_game_view")
     .select("*")
     .eq("slug", slug)
     .gte("date", todayBR())
     .order("date", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("time", { ascending: true })
+    .limit(6);
 
+  // ?jogo=ID abre um jogo específico (ex.: jogo único); sem isso, o próximo da turma
+  const game = (upcoming ?? []).find((g) => g.game_id === jogo) ?? (upcoming ?? [])[0];
   if (!game) notFound();
+  const otherGames = (upcoming ?? []).filter((g) => g.game_id !== game.game_id)
+    .map((g) => ({ id: g.game_id as string, date: g.date as string, time: String(g.time), title: (g.title as string | null) ?? null, oneOff: g.generated === false }));
 
   const { data: participants } = await db
     .from("public_game_participants_view")
@@ -61,7 +69,8 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
         .eq("player_id", player.id)
         .eq("status", "active")
         .maybeSingle();
-      isMember = !!m;
+      // jogo em que mensalista paga: ele vê e age como avulso
+      isMember = !!m && !game.members_pay;
       situation = await loadSituation(player.id, teamRow.id);
       if (!isMember) {
         const { peekCredit } = await import("@/lib/credits");
@@ -82,6 +91,7 @@ export default async function PublicTeamPage({ params }: { params: Promise<{ slu
       pendingPix={pendingPix}
       slug={slug}
       situation={situation}
+      otherGames={otherGames}
     />
   );
 }

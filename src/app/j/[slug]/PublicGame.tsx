@@ -11,7 +11,9 @@ interface Game {
   game_id: string; team_name: string; date: string; time: string; address: string;
   capacity: number; status: string; confirm_until: string; withdraw_until: string;
   dropin_fee: number; spots_available: number;
+  title?: string | null; members_pay?: boolean; generated?: boolean;
 }
+interface OtherGame { id: string; date: string; time: string; title: string | null; oneOff: boolean }
 interface Participant { display_name: string; kind: string; status: string }
 interface Player { id: string; name: string }
 interface Pix { qr: string; copypaste: string; amount: number; expiresAt?: string | null }
@@ -23,7 +25,7 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "", situation = null }: {
+export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "", situation = null, otherGames = [] }: {
   game: Game;
   participants: Participant[];
   player: Player | null;
@@ -33,6 +35,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   pendingPix?: Pix | null; // Pix em aberto ao abrir a página (reserva/promoção)
   slug?: string;
   situation?: Situation | null;
+  otherGames?: OtherGame[];
 }) {
   // prazo de desistência avaliado já na renderização (não só ao clicar)
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
@@ -265,6 +268,12 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
       {/* Cabeçalho do jogo */}
       <div className="card p-5 space-y-1">
         <p className="text-sm font-semibold text-[var(--brand)]">🏐 {game.team_name}</p>
+        {game.generated === false && (
+          <p className="text-sm font-bold text-[var(--warn)]">⭐ Jogo extra{game.title ? ` — ${game.title}` : ""}</p>
+        )}
+        {game.members_pay && (
+          <p className="text-xs text-[var(--ink-soft)]">Neste jogo todos pagam {fmtMoney(Number(game.dropin_fee))}, inclusive mensalistas.</p>
+        )}
         <h1 className="text-xl font-bold capitalize">{fmtDate(game.date)} · {game.time.slice(0, 5)}</h1>
         <p className="text-sm text-[var(--ink-soft)]">📍 {game.address}</p>
         <div className="flex gap-2 pt-2">
@@ -279,6 +288,19 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
             </span>
           )}
         </div>
+        {otherGames.length > 0 && (
+          <div className="pt-3">
+            <p className="text-xs text-[var(--ink-soft)]">Outros jogos desta turma:</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {otherGames.map((o) => (
+                <a key={o.id} href={`/j/${slug}?jogo=${o.id}`}
+                  className={`badge ${o.oneOff ? "badge-warn" : "badge-neutral"} no-underline`}>
+                  {o.oneOff ? "⭐ " : ""}{new Date(`${o.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })} {o.time.slice(0, 5)}{o.title ? ` · ${o.title}` : ""}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pix pendente */}

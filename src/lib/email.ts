@@ -4,8 +4,11 @@
 export async function sendEmail(opts: { to: string; subject: string; html: string; text?: string }) {
   const key = (process.env.RESEND_API_KEY ?? "").trim();
   if (!key) throw new Error("RESEND_API_KEY não configurada");
-  const from = (process.env.RESEND_FROM ?? "Let's Play <onboarding@resend.dev>").trim();
-  const res = await fetch("https://api.resend.com/emails", {
+  // aceita o valor com ou sem aspas em volta (alguns painéis gravam as aspas)
+  const from = (process.env.RESEND_FROM ?? "Let's Play <onboarding@resend.dev>").trim().replace(/^["']|["']$/g, "");
+  // RESEND_BASE_URL_OVERRIDE: só para teste local (servidor falso que captura o e-mail)
+  const base = (process.env.RESEND_BASE_URL_OVERRIDE || "https://api.resend.com").replace(/\/+$/, "");
+  const res = await fetch(`${base}/emails`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ from, to: [opts.to], subject: opts.subject, html: opts.html, text: opts.text }),

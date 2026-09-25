@@ -28,19 +28,29 @@ async function loadGame(gameId: string) {
   const db = supabaseAdmin();
   const { data: g } = await db
     .from("games")
-    .select("id, date, time, address_override, capacity_override, status, confirm_until, teams(id, name, address, capacity, dropin_fee, whatsapp_group_id, message_mode, batch_minutes, slug, waitlist_minutes)")
+    .select("id, date, time, address_override, capacity_override, status, confirm_until, title, generated, members_pay, dropin_fee_override, teams(id, name, address, capacity, dropin_fee, whatsapp_group_id, message_mode, batch_minutes, slug, waitlist_minutes)")
     .eq("id", gameId)
     .maybeSingle();
   if (!g) return null;
-  return { game: g, team: g.teams as unknown as TeamInfo };
+  // jogo único pode ter valor próprio: a cópia da turma já vem com o valor efetivo
+  const base = g.teams as unknown as TeamInfo;
+  const team: TeamInfo = { ...base, dropin_fee: Number(g.dropin_fee_override ?? base.dropin_fee) };
+  return { game: g, team };
 }
 
-export function publicLink(slug: string) {
+export function publicLink(slug: string, gameId?: string) {
   // extrai apenas a URL — protege contra valores colados com o nome da
   // variável junto (ex.: "NEXT_PUBLIC_APP_URL=https://...")
   const raw = process.env.NEXT_PUBLIC_APP_URL ?? "";
   const base = (raw.match(/https?:\/\/[^\s"']+/)?.[0] ?? "").replace(/\/+$/, "");
-  return base ? `${base}/j/${slug}` : "";
+  if (!base) return "";
+  // jogo único: link aponta para ele (o link simples mostra o próximo jogo da turma)
+  return gameId ? `${base}/j/${slug}?jogo=${gameId}` : `${base}/j/${slug}`;
+}
+
+/** Link certo para um jogo: recorrente → link da turma; jogo único → link com ?jogo=. */
+export function gameLink(slug: string, gameId: string, oneOff: boolean) {
+  return oneOff ? publicLink(slug, gameId) : publicLink(slug);
 }
 
 interface RosterEntry { name: string; status: string }
@@ -65,17 +75,24 @@ export interface Roster {
  * Exemplo: 18 vagas, 10 mensalistas → 8 para avulsos. Se um mensalista
  * disser que não vem → 9 mensalistas segurando → 9 vagas para avulsos.
  */
-export async function buildRoster(gameId: string): Promise<{ roster: Roster; game: { date: string; time: string; address: string; confirm_until: string }; team: TeamInfo } | null> {
+export interface RosterGame {
+  id: string; date: string; time: string; address: string; confirm_until: string;
+  title: string | null; oneOff: boolean; membersPay: boolean;
+}
+
+export async function buildRoster(gameId: string): Promise<{ roster: Roster; game: RosterGame; team: TeamInfo } | null> {
   const loaded = await loadGame(gameId);
   if (!loaded) return null;
   const { game: g, team: t } = loaded;
   const db = supabaseAdmin();
   const capacity = g.capacity_override ?? t.capacity;
 
-  const [{ data: teamMembers }, { data: parts }] = await Promise.all([
+  const [{ data: teamMembersRaw }, { data: parts }] = await Promise.all([
     db.from("team_members").select("player_id, players(name)").eq("team_id", t.id).eq("status", "active"),
     db.from("game_participants").select("player_id, kind, status, confirmed_at, created_at, players(name)").eq("game_id", gameId),
   ]);
+  // jogo em que mensalista paga: ninguém tem vaga garantida — todos entram como não mensalistas
+  const teamMembers = g.members_pay ? [] : teamMembersRaw;
 
   const byPlayer = new Map((parts ?? []).map((p) => [p.player_id, p]));
   const memberIds = new Set((teamMembers ?? []).map((m) => m.player_id));
@@ -112,12 +129,24 @@ export async function buildRoster(gameId: string): Promise<{ roster: Roster; gam
   return {
     roster: { capacity, members, dropins, waitlist, membersHolding, dropinsOccupying, dropinSlots, dropinSlotsFree, confirmedTotal },
     game: {
-      date: g.date, time: String(g.time),
+      id: g.id, date: g.date, time: String(g.time),
       address: g.address_override ?? t.address,
       confirm_until: g.confirm_until,
+      title: g.title ?? null, oneOff: g.generated === false, membersPay: !!g.members_pay,
     },
     team: t,
   };
+}
+
+/** Cabeçalho do jogo nas mensagens: jogo único ganha destaque e título próprio. */
+function gameHeader(t: TeamInfo, g: RosterGame) {
+  return g.oneOff
+    ? `⭐ *JOGO EXTRA — ${t.name}*${g.title ? `\n🏷️ ${g.title}` : ""}`
+    : null;
+}
+
+function feeLine(t: TeamInfo, g: RosterGame) {
+  return `💰 Valor: ${fmtMoney(t.dropin_fee)} ${g.membersPay ? "(todos pagam, inclusive mensalistas)" : "(não mensalistas)"}`;
 }
 
 /** Marca ao lado do nome do mensalista, no padrão usado nos grupos. */
@@ -139,16 +168,20 @@ function weekdayName(d: string) {
 /** Blocos da lista (Mensalistas / Não mensalistas / espera / rodapé) — usados
  *  tanto na mensagem de abertura quanto nas atualizações, para o grupo ver
  *  sempre a mesma estrutura. */
-function rosterLines(r: Roster, waitlistMinutes = 60): string[] {
-  const lines: string[] = [`*Mensalistas:* (${r.membersHolding} de ${r.members.length} na lista)`];
+function rosterLines(r: Roster, waitlistMinutes = 60, membersPay = false): string[] {
+  const lines: string[] = [];
 
-  if (r.members.length === 0) {
-    lines.push(`_nenhum mensalista cadastrado nesta turma_`);
-  } else {
-    r.members.forEach((m, i) => lines.push(memberLine(i + 1, m.name, m.status)));
+  if (!membersPay) {
+    lines.push(`*Mensalistas:* (${r.membersHolding} de ${r.members.length} na lista)`);
+    if (r.members.length === 0) {
+      lines.push(`_nenhum mensalista cadastrado nesta turma_`);
+    } else {
+      r.members.forEach((m, i) => lines.push(memberLine(i + 1, m.name, m.status)));
+    }
+    lines.push(``);
   }
 
-  lines.push(``, `*Não mensalistas:* (${r.dropinsOccupying} de ${r.dropinSlots} ${r.dropinSlots === 1 ? "vaga" : "vagas"})`);
+  lines.push(`*${membersPay ? "Jogadores" : "Não mensalistas"}:* (${r.dropinsOccupying} de ${r.dropinSlots} ${r.dropinSlots === 1 ? "vaga" : "vagas"})`);
   if (r.dropins.length === 0) {
     lines.push(`_ninguém ainda_`);
   } else {
@@ -166,10 +199,12 @@ function rosterLines(r: Roster, waitlistMinutes = 60): string[] {
   lines.push(
     ``,
     r.dropinSlotsFree > 0
-      ? `🟢 *Ainda cabem ${r.dropinSlotsFree} não ${r.dropinSlotsFree === 1 ? "mensalista" : "mensalistas"}*`
+      ? (membersPay
+        ? `🟢 *Ainda ${r.dropinSlotsFree === 1 ? "cabe 1 jogador" : `cabem ${r.dropinSlotsFree} jogadores`}*`
+        : `🟢 *Ainda cabem ${r.dropinSlotsFree} não ${r.dropinSlotsFree === 1 ? "mensalista" : "mensalistas"}*`)
       : `🔴 *Lista completa — quem entrar agora vai para a lista de espera*`,
     r.dropinSlotsFree > 0
-      ? `_Cada mensalista que avisar que não vem libera mais uma vaga._`
+      ? (membersPay ? `_A vaga é garantida com o pagamento do Pix._` : `_Cada mensalista que avisar que não vem libera mais uma vaga._`)
       : `_Abriu vaga? O 1º da espera é avisado no WhatsApp e tem ${fmtMinutes(waitlistMinutes)} para pagar o Pix._`,
   );
 
@@ -180,16 +215,17 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
   const built = await buildRoster(gameId);
   if (!built) return null;
   const { roster: r, game: g, team: t } = built;
-  const link = publicLink(t.slug);
+  const link = gameLink(t.slug, g.id, g.oneOff);
+  const header = gameHeader(t, g);
 
   const lines: string[] = [
-    `🏐 *${t.name}* | ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`,
+    ...(header ? [header, `📅 ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`] : [`🏐 *${t.name}* | ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`]),
     `⏰ Horário: ${String(g.time).slice(0, 5)}`,
     `📍 Local: ${g.address}`,
     ``,
-    `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
+    feeLine(t, g),
     ``,
-    ...rosterLines(r, t.waitlist_minutes ?? 60),
+    ...rosterLines(r, t.waitlist_minutes ?? 60, g.membersPay),
   ];
 
   if (link) lines.push(``, `👉 Confirme sua presença: ${link}`);
@@ -268,20 +304,25 @@ export async function enqueueListOpened(gameId: string) {
   const { roster: r, game: g, team: t } = built;
   if (t.message_mode === "manual") return;
 
-  const link = publicLink(t.slug);
+  const link = gameLink(t.slug, g.id, g.oneOff);
   const prazo = new Date(g.confirm_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const header = gameHeader(t, g);
   const lines = [
-    `🏐 *LISTA ABERTA — ${t.name}*`,
+    header ? `${header}\n📣 *LISTA ABERTA*` : `🏐 *LISTA ABERTA — ${t.name}*`,
     `📅 ${weekdayName(g.date)}, ${fmtDateFull(g.date)} às ${String(g.time).slice(0, 5)}`,
     `📍 Local: ${g.address}`,
     ``,
-    `💰 Valor: ${fmtMoney(t.dropin_fee)} (não mensalistas)`,
+    feeLine(t, g),
     `👥 ${r.capacity} vagas no total`,
     ``,
-    ...rosterLines(r, t.waitlist_minutes ?? 60),
+    ...rosterLines(r, t.waitlist_minutes ?? 60, g.membersPay),
     ``,
-    `*Mensalistas:* confirmem se vão jogar até ${prazo}. Quem avisar que não vem libera a vaga.`,
-    `*Não mensalistas:* garantam a vaga pagando o Pix pelo link — a vaga só é confirmada após o pagamento.`,
+    ...(g.membersPay
+      ? [`*Todos* garantem a vaga pagando o Pix pelo link — a vaga só é confirmada após o pagamento.`]
+      : [
+        `*Mensalistas:* confirmem se vão jogar até ${prazo}. Quem avisar que não vem libera a vaga.`,
+        `*Não mensalistas:* garantam a vaga pagando o Pix pelo link — a vaga só é confirmada após o pagamento.`,
+      ]),
   ];
   if (link) lines.push(``, `👉 ${link}`);
   const body = lines.join("\n");
@@ -304,9 +345,9 @@ export async function sendPixToPlayer(opts: {
   teamId: string; phone: string; playerName: string; teamName: string;
   date: string; time: string; amount: number; copypaste: string; minutes: number;
   /** subiu da lista de espera: sai mesmo em modo "portal" e cita o link */
-  fromWaitlist?: boolean; slug?: string;
+  fromWaitlist?: boolean; slug?: string; link?: string;
 }) {
-  const link = opts.slug ? publicLink(opts.slug) : "";
+  const link = opts.link ?? (opts.slug ? publicLink(opts.slug) : "");
   const intro = [
     `🏐 Olá, ${opts.playerName.split(" ")[0]}!`,
     ``,
@@ -415,13 +456,16 @@ export async function dispatchPending(limit = 20): Promise<{ sent: number; faile
     .update({ status: "failed", error: "Envio interrompido — o servidor reiniciou no meio. Reenvie manualmente se necessário." })
     .eq("status", "sending")
     .lt("created_at", new Date(Date.now() - 15 * 60_000).toISOString());
-  const { data: pending } = await db
+  let q = db
     .from("message_dispatches")
     .select("*")
     .eq("status", "queued")
-    .lte("scheduled_for", new Date().toISOString())
-    .order("created_at", { ascending: true })
-    .limit(limit);
+    .lte("scheduled_for", new Date().toISOString());
+  // SÓ PARA TESTE LOCAL: um servidor de teste ligado ao banco real despacha
+  // apenas as mensagens da turma de teste — nunca a fila de produção
+  const onlyTeam = process.env.DISPATCH_ONLY_TEAM_ID;
+  if (onlyTeam) q = q.in("team_id", onlyTeam.split(",").map((s) => s.trim()));
+  const { data: pending } = await q.order("created_at", { ascending: true }).limit(limit);
 
   let sent = 0, failed = 0;
   for (const m of pending ?? []) {

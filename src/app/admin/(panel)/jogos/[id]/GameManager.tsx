@@ -12,7 +12,7 @@ interface Participant {
   creditRefundable?: boolean; // false = desistência após o prazo (crédito sem devolução em dinheiro)
 }
 interface Game {
-  id: string; teamName: string; date: string; time: string; status: string;
+  id: string; teamName: string; date: string; time: string; status: string; extraLabel?: string | null;
   capacity: number; hasWhatsApp: boolean;
 }
 
@@ -69,6 +69,7 @@ export default function GameManager({ game, participants, addable = [], splitter
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">{game.teamName}</h1>
+        {game.extraLabel && <p className="text-sm font-semibold text-[var(--warn)]">{game.extraLabel}</p>}
         <p className="text-sm text-[var(--ink-soft)]">
           {new Date(`${game.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" })} · {game.time.slice(0, 5)} · {confirmed.length}/{game.capacity} confirmados
         </p>

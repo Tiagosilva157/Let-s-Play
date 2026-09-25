@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { todayBR } from "@/lib/dates";
+import OneOffGameForm from "./OneOffGameForm";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,12 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
 
   let query = db
     .from("games")
-    .select("id, date, time, status, teams(name, capacity), game_participants(status, kind, charges(status))");
+    .select("id, date, time, status, title, generated, capacity_override, teams(name, capacity), game_participants(status, kind, charges(status))");
   query = past
     ? query.lt("date", today).order("date", { ascending: false }).limit(40)
     : query.gte("date", today).order("date").limit(30);
   const { data: games } = await query;
+  const { data: teamOpts } = await db.from("teams").select("id, name, capacity, dropin_fee, address, game_time").eq("status", "active").order("name");
 
   return (
     <div className="space-y-4">
@@ -37,6 +39,7 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
           <Link href="/admin/jogos?ver=anteriores" className={`rounded-lg px-3 py-1.5 text-sm font-medium ${past ? "bg-[var(--brand)] text-white" : "text-[var(--ink-soft)]"}`}>🕘 Anteriores</Link>
         </div>
       </div>
+      {!past && <OneOffGameForm teams={(teamOpts ?? []).map((t) => ({ ...t, dropin_fee: Number(t.dropin_fee), game_time: String(t.game_time) }))} today={today} />}
       {past && (
         <p className="text-sm text-[var(--ink-soft)]">
           Histórico dos jogos já realizados. Abra qualquer um para cancelar (jogo que não aconteceu), dar crédito ou estornar quem pagou — as mesmas ações de um jogo em andamento.
@@ -53,7 +56,10 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
           return (
             <Link key={g.id} href={`/admin/jogos/${g.id}`} className="card flex items-center justify-between p-4">
               <div>
-                <p className="font-semibold">{team.name}</p>
+                <p className="font-semibold">
+                  {team.name}
+                  {g.generated === false && <span className="ml-2 badge badge-warn">⭐ Jogo extra{g.title ? ` · ${g.title}` : ""}</span>}
+                </p>
                 <p className="text-sm text-[var(--ink-soft)]">
                   {new Date(`${g.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" })} · {String(g.time).slice(0, 5)}
                   {past && paidDropins > 0 && ` · ${paidDropins} avulso(s) pago(s)`}
@@ -61,7 +67,7 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {toDecide > 0 && <span className="badge badge-danger">{toDecide} a decidir</span>}
-                <span className="badge badge-neutral">{confirmed}/{team.capacity}</span>
+                <span className="badge badge-neutral">{confirmed}/{g.capacity_override ?? team.capacity}</span>
                 <span className={`badge ${st.cls}`}>{st.label}</span>
               </div>
             </Link>

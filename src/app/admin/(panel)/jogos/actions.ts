@@ -31,7 +31,7 @@ export async function adminAddPlayer(gameId: string, playerId: string) {
   const db = supabaseAdmin();
 
   const { data: game } = await db.from("games")
-    .select("id, status, team_id, capacity_override, teams(capacity, whatsapp_group_id, name)")
+    .select("id, status, team_id, capacity_override, members_pay, teams(capacity, whatsapp_group_id, name)")
     .eq("id", gameId).maybeSingle();
   if (!game) return { error: "Jogo não encontrado." };
   if (game.status === "canceled") return { error: "Este jogo está cancelado — restaure-o primeiro." };
@@ -42,7 +42,8 @@ export async function adminAddPlayer(gameId: string, playerId: string) {
 
   const { data: membership } = await db.from("team_members").select("id")
     .eq("team_id", game.team_id).eq("player_id", playerId).eq("status", "active").maybeSingle();
-  const kind: "member" | "dropin" = membership ? "member" : "dropin";
+  // jogo em que mensalista paga: entra como avulso
+  const kind: "member" | "dropin" = membership && !game.members_pay ? "member" : "dropin";
 
   // capacidade: quem segura vaga = confirmados + aguardando Pix + mensalistas sem resposta
   const { data: existing } = await db.from("game_participants")
@@ -220,9 +221,9 @@ export async function toggleList(gameId: string, open: boolean) {
       if (new Date(gameRow.withdraw_until) < new Date()) updates.withdraw_until = gameStart;
     }
     await db.from("games").update(updates).eq("id", gameId);
-    // garante invited dos mensalistas
-    const { data: g } = await db.from("games").select("team_id").eq("id", gameId).single();
-    if (g) {
+    // garante invited dos mensalistas (exceto em jogo onde todos pagam)
+    const { data: g } = await db.from("games").select("team_id, members_pay").eq("id", gameId).single();
+    if (g && !g.members_pay) {
       const { data: members } = await db.from("team_members").select("player_id").eq("team_id", g.team_id).eq("status", "active");
       for (const m of members ?? []) {
         await db.from("game_participants")
@@ -498,4 +499,16 @@ export async function resolvePendingReview(participantId: string, decision: "cre
   await auditAdmin(admin.id, `resolve_pending_${decision}`, "game_participants", participantId);
   revalidatePath(`/admin/jogos/${part.game_id}`);
   return { ok: true };
+}
+
+/** Jogo único (extra): a regra fica em @/lib/games; aqui só a checagem de admin. */
+export async function createOneOffGame(input: import("@/lib/games").OneOffInput) {
+  const admin = await requireAdmin();
+  const { createOneOffGameCore } = await import("@/lib/games");
+  const res = await createOneOffGameCore(input);
+  if ("id" in res && res.id) {
+    await auditAdmin(admin.id, "create_one_off_game", "games", res.id, { ...input });
+    revalidatePath("/admin/jogos");
+  }
+  return res;
 }
