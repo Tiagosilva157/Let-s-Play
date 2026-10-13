@@ -99,7 +99,8 @@ export async function processPromotions(gameId: string, promotedIds: string[] | 
         `🎫 ${firstName(pl.name)}, abriu vaga no *${team.name}* de ${fmtDate(game.date)} e ela é sua!`,
         ``,
         `Usamos seu crédito de R$ ${Number(credit.amount).toFixed(2).replace(".", ",")} — nada a pagar. Presença confirmada! ✅`,
-      ].join("\n")).catch(() => {});
+      // subiu da fila: a pessoa precisa saber que vai jogar — sai no WhatsApp mesmo no modo "só pelo link"
+      ].join("\n"), { essential: true }).catch(() => {});
       if (team.whatsapp_group_id && team.message_mode !== "manual") {
         await enqueueGroupMessage(team.id, team.whatsapp_group_id,
           `🔔 *${firstName(pl.name)}* subiu da lista de espera e usou o crédito que tinha — vaga confirmada!`, gameId).catch(() => {});
