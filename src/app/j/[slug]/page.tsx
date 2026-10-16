@@ -4,6 +4,7 @@ import { todayBR } from "@/lib/dates";
 import { notFound } from "next/navigation";
 import PublicGame from "./PublicGame";
 import { loadSituation, type Situation } from "@/lib/my-situation";
+import { loadPublicRoster } from "@/lib/public-roster";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,9 @@ export default async function PublicTeamPage({ params, searchParams }: {
     }
   }
 
+  // lista ao vivo (mesma estrutura do grupo): nomes completos só para quem está logado
+  const roster = await loadPublicRoster(game.game_id, !!player);
+
   return (
     <PublicGame
       game={game}
@@ -92,6 +96,7 @@ export default async function PublicTeamPage({ params, searchParams }: {
       slug={slug}
       situation={situation}
       otherGames={otherGames}
+      roster={roster}
     />
   );
 }

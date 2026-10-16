@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 import PhoneInput, { isCompleteMobile } from "@/components/PhoneInput";
 import MySituation from "./MySituation";
+import LiveRoster from "./LiveRoster";
+import type { PublicRoster } from "@/lib/public-roster";
 import type { Situation } from "@/lib/my-situation";
 
 interface Game {
@@ -25,7 +27,7 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "", situation = null, otherGames = [] }: {
+export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "", situation = null, otherGames = [], roster = null }: {
   game: Game;
   participants: Participant[];
   player: Player | null;
@@ -36,6 +38,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   slug?: string;
   situation?: Situation | null;
   otherGames?: OtherGame[];
+  roster?: PublicRoster | null;
 }) {
   // prazo de desistência avaliado já na renderização (não só ao clicar)
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
@@ -72,7 +75,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   }, []);
 
   // mantém o indicador girando até a tela realmente atualizar
-  const refresh = () => startRefresh(() => router.refresh());
+  const refresh = () => {
+    startRefresh(() => router.refresh());
+    // a lista ao vivo também se atualiza na hora, sem esperar os 15 s
+    window.dispatchEvent(new Event("roster:refresh"));
+  };
 
   const confirmed = participants.filter((p) => p.status === "confirmed");
   const waitlist = participants.filter((p) => p.status === "waitlist");
@@ -605,31 +612,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
       {/* Minha situação: mensalidade, pendências, créditos e histórico — sem depender de WhatsApp */}
       {player && situation && step === "idle" && <MySituation s={situation} />}
 
-      {/* Lista de confirmados */}
-      <div className="card p-5">
-        <h2 className="mb-3 font-bold">Confirmados ({confirmed.length}/{game.capacity})</h2>
-        {confirmed.length === 0 && <p className="text-sm text-[var(--ink-soft)]">Ninguém confirmou ainda. Seja o primeiro!</p>}
-        <ol className="space-y-2">
-          {confirmed.map((p, i) => (
-            <li key={i} className="flex items-center justify-between text-sm">
-              <span>{i + 1}. {p.display_name}</span>
-              <span className={`badge ${p.kind === "member" ? "badge-neutral" : "badge-success"}`}>
-                {p.kind === "member" ? "Mensalista" : "Avulso"}
-              </span>
-            </li>
-          ))}
-        </ol>
-        {waitlist.length > 0 && (
-          <>
-            <h3 className="mb-2 mt-4 text-sm font-bold text-[var(--ink-soft)]">Lista de espera</h3>
-            <ol className="space-y-1">
-              {waitlist.map((p, i) => (
-                <li key={i} className="text-sm text-[var(--ink-soft)]">{i + 1}. {p.display_name}</li>
-              ))}
-            </ol>
-          </>
-        )}
-      </div>
+      {/* Lista do jogo ao vivo: mesma estrutura da lista do grupo, atualiza sozinha */}
+      <LiveRoster gameId={game.game_id} initial={roster} />
     </main>
   );
 }
