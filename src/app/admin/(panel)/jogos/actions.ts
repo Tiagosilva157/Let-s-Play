@@ -296,6 +296,18 @@ export async function restoreGame(gameId: string) {
 }
 
 /** Salva a divisão de times escolhida, vinculada ao jogo. */
+/** Observações do jogo: aparecem no topo da lista do grupo e do link dos jogadores. */
+export async function saveGameNotes(gameId: string, notes: string) {
+  const admin = await requireAdmin();
+  const clean = (notes ?? "").trim().slice(0, 500) || null;
+  const db = supabaseAdmin();
+  const { error } = await db.from("games").update({ notes: clean }).eq("id", gameId);
+  if (error) return { error: "Erro ao salvar as observações." };
+  await auditAdmin(admin.id, "save_notes", "games", gameId, { notes: clean });
+  revalidatePath(`/admin/jogos/${gameId}`);
+  return { ok: true, note: clean ? "Observações salvas. Elas vão no topo da próxima lista enviada ao grupo." : "Observações removidas." };
+}
+
 export async function saveTeamsSplit(gameId: string, teamsPlayerIds: string[][]) {
   const admin = await requireAdmin();
   if (!Array.isArray(teamsPlayerIds)) return { error: "Divisão inválida." };
