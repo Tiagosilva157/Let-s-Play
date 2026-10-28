@@ -7,7 +7,7 @@ Sistema de gestão de turmas de vôlei: confirmação de presença por link púb
 - **Next.js 16 (App Router) + TypeScript + Tailwind** — painel admin (`/admin`) e link público (`/j/[slug]`)
 - **Supabase Postgres** — dados, RLS, funções SQL transacionais (corrida da última vaga resolvida com `SELECT ... FOR UPDATE`)
 - **Asaas** — Pix avulso, assinaturas mensais, webhook idempotente
-- **GP Connect** — OTP por WhatsApp e mensagens nos grupos
+- **GP Connect** — mensagens nos grupos do WhatsApp (o código de acesso vai por e-mail, via Resend)
 - **Vercel Cron** — `/api/cron/tick` (1/min: expira reservas, abre/fecha listas, envia fila de mensagens) e `/api/cron/daily` (gera jogos, conciliação com Asaas)
 
 ## Setup
@@ -34,7 +34,7 @@ Copie `.env.example` para `.env.local` e preencha. **Nunca** exponha `SUPABASE_S
 ### 4. GP Connect
 A doc oficial fica atrás de login (base.connetchannelslite.com.br). Ajuste em `.env.local` e, se o payload diferir, em `src/lib/gpconnect.ts`:
 - `GPCONNECT_BASE_URL`, `GPCONNECT_TOKEN`
-- `GPCONNECT_GROUP_PATH` (mensagem para grupos) e `GPCONNECT_TEXT_PATH` (mensagem individual/OTP)
+- `GPCONNECT_GROUP_PATH` (mensagem para grupos) e `GPCONNECT_TEXT_PATH` (mensagem individual)
 
 ### 5. Deploy (Vercel)
 1. Importe o repositório na Vercel e configure as env vars.
@@ -43,7 +43,7 @@ A doc oficial fica atrás de login (base.connetchannelslite.com.br). Ajuste em `
 ## Fluxos principais
 
 - **Mensalista**: recebe status `invited` quando a lista abre → confirma ("Vou jogar") ou recusa no link público. Recusa libera a vaga para avulsos.
-- **Avulso**: telefone → OTP WhatsApp → reserva a vaga por 15 min → paga o Pix → webhook confirma automaticamente. Sem pagamento, a reserva expira e a vaga volta.
+- **Avulso**: telefone → senha (ou código por e-mail no primeiro acesso) → reserva a vaga por 15 min → paga o Pix → webhook confirma automaticamente. Sem pagamento, a reserva expira e a vaga volta.
 - **Pagou com lista cheia / jogo cancelado**: participação vira `pending_review`; o admin decide entre crédito ou estorno na tela do jogo.
 - **Desistência fora do prazo**: bloqueada para o jogador; cobrança mantida (política configurada).
 

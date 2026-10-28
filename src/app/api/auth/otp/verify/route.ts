@@ -8,7 +8,6 @@ import { createPlayerSession } from "@/lib/session";
 const Body = z.object({
   phone: z.string().min(8).max(20),
   code: z.string().length(6),
-  name: z.string().min(2).max(80).optional(), // primeiro acesso de jogador novo
 });
 
 export async function POST(req: NextRequest) {
@@ -48,16 +47,18 @@ export async function POST(req: NextRequest) {
     await db.from("players").update({ phone }).eq("id", player.id);
   }
   if (!player) {
-    // primeira vez: pedimos o nome SEM consumir o código — ele será
-    // verificado de novo na próxima chamada, já com o nome preenchido
-    if (!parsed.data.name) return NextResponse.json({ ok: true, needs_name: true });
+    // telefone novo: o nome veio no pedido do código (já validado por e-mail)
+    if (!otp.name) return NextResponse.json({ error: "code_expired" }, { status: 400 });
     const { data: created, error } = await db
       .from("players")
-      .insert({ name: parsed.data.name.trim(), phone })
+      .insert({ name: otp.name, phone, email: otp.email ?? null })
       .select("id, name, active, phone")
       .single();
     if (error) return NextResponse.json({ error: "internal" }, { status: 500 });
     player = created;
+  } else if (otp.email) {
+    // jogador antigo sem e-mail: o e-mail que recebeu o código vira o do cadastro
+    await db.from("players").update({ email: otp.email }).eq("id", player.id).is("email", null);
   }
   if (!player.active) return NextResponse.json({ error: "player_inactive" }, { status: 403 });
 
