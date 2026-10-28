@@ -28,7 +28,7 @@ async function loadGame(gameId: string) {
   const db = supabaseAdmin();
   const { data: g } = await db
     .from("games")
-    .select("id, date, time, address_override, capacity_override, status, confirm_until, title, generated, members_pay, dropin_fee_override, teams(id, name, address, capacity, dropin_fee, whatsapp_group_id, message_mode, batch_minutes, slug, waitlist_minutes)")
+    .select("id, date, time, address_override, capacity_override, status, confirm_until, title, generated, members_pay, dropin_fee_override, notes, teams(id, name, address, capacity, dropin_fee, whatsapp_group_id, message_mode, batch_minutes, slug, waitlist_minutes)")
     .eq("id", gameId)
     .maybeSingle();
   if (!g) return null;
@@ -78,6 +78,7 @@ export interface Roster {
 export interface RosterGame {
   id: string; date: string; time: string; address: string; confirm_until: string;
   title: string | null; oneOff: boolean; membersPay: boolean;
+  notes: string | null; // observações do admin: vão no topo das mensagens
 }
 
 export async function buildRoster(gameId: string): Promise<{ roster: Roster; game: RosterGame; team: TeamInfo } | null> {
@@ -133,6 +134,7 @@ export async function buildRoster(gameId: string): Promise<{ roster: Roster; gam
       address: g.address_override ?? t.address,
       confirm_until: g.confirm_until,
       title: g.title ?? null, oneOff: g.generated === false, membersPay: !!g.members_pay,
+      notes: (g.notes as string | null)?.trim() || null,
     },
     team: t,
   };
@@ -143,6 +145,11 @@ function gameHeader(t: TeamInfo, g: RosterGame) {
   return g.oneOff
     ? `⭐ *JOGO EXTRA — ${t.name}*${g.title ? `\n🏷️ ${g.title}` : ""}`
     : null;
+}
+
+/** Observações do jogo: aviso em destaque, antes de tudo na mensagem. */
+function notesLines(g: RosterGame): string[] {
+  return g.notes ? [`📢 *AVISO:* ${g.notes}`, ``] : [];
 }
 
 function feeLine(t: TeamInfo, g: RosterGame) {
@@ -219,6 +226,7 @@ export async function buildListMessage(gameId: string): Promise<{ body: string; 
   const header = gameHeader(t, g);
 
   const lines: string[] = [
+    ...notesLines(g),
     ...(header ? [header, `📅 ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`] : [`🏐 *${t.name}* | ${weekdayName(g.date)} — ${fmtDateFull(g.date)}`]),
     `⏰ Horário: ${String(g.time).slice(0, 5)}`,
     `📍 Local: ${g.address}`,
@@ -308,6 +316,7 @@ export async function enqueueListOpened(gameId: string) {
   const prazo = new Date(g.confirm_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const header = gameHeader(t, g);
   const lines = [
+    ...notesLines(g),
     header ? `${header}\n📣 *LISTA ABERTA*` : `🏐 *LISTA ABERTA — ${t.name}*`,
     `📅 ${weekdayName(g.date)}, ${fmtDateFull(g.date)} às ${String(g.time).slice(0, 5)}`,
     `📍 Local: ${g.address}`,

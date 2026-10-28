@@ -14,6 +14,7 @@ interface Game {
   capacity: number; status: string; confirm_until: string; withdraw_until: string;
   dropin_fee: number; spots_available: number;
   title?: string | null; members_pay?: boolean; generated?: boolean;
+  notes?: string | null;
 }
 interface OtherGame { id: string; date: string; time: string; title: string | null; oneOff: boolean }
 interface Participant { display_name: string; kind: string; status: string }
@@ -272,6 +273,13 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
 
   return (
     <main className="mx-auto max-w-md px-4 py-6 space-y-4">
+      {/* Observações do admin: antes de tudo */}
+      {game.notes?.trim() && (
+        <div className="card border-2 border-[var(--warn)] bg-[var(--warn-bg)] p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--warn)]">📢 Aviso</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm font-medium">{game.notes.trim()}</p>
+        </div>
+      )}
       {/* Cabeçalho do jogo */}
       <div className="card p-5 space-y-1">
         <p className="text-sm font-semibold text-[var(--brand)]">🏐 {game.team_name}</p>

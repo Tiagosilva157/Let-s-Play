@@ -88,6 +88,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
         status: game.status,
         capacity: game.capacity_override ?? team.capacity,
         hasWhatsApp: !!team.whatsapp_group_id,
+        notes: (game.notes as string | null) ?? "",
         extraLabel: game.generated === false
           ? `⭐ Jogo extra${game.title ? ` · ${game.title}` : ""}${game.members_pay ? " · todos pagam" : ""}${game.dropin_fee_override != null ? ` · R$ ${Number(game.dropin_fee_override).toFixed(2).replace(".", ",")}` : ""}`
           : null,

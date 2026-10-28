@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resolvePendingBatch, resetGame, restoreGame, backToScheduled } from "../actions";
+import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resolvePendingBatch, resetGame, restoreGame, backToScheduled, saveGameNotes } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -13,7 +13,7 @@ interface Participant {
 }
 interface Game {
   id: string; teamName: string; date: string; time: string; status: string; extraLabel?: string | null;
-  capacity: number; hasWhatsApp: boolean;
+  capacity: number; hasWhatsApp: boolean; notes?: string;
 }
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
@@ -39,6 +39,7 @@ const ACTION_LABEL: Record<string, string> = {
   back_to_scheduled: "Voltou para Agendado (disparo automático reativado)",
   reset_game: "Lista resetada",
   save_teams_split: "Divisão de times salva",
+  save_notes: "Observações do jogo atualizadas",
   send_teams: "Times enviados ao grupo",
 };
 
@@ -49,6 +50,8 @@ export default function GameManager({ game, participants, addable = [], splitter
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [search, setSearch] = useState("");
+  const [notes, setNotes] = useState(game.notes ?? "");
+  const notesDirty = notes.trim() !== (game.notes ?? "").trim();
 
   const confirmed = participants.filter((p) => p.status === "confirmed");
   const invited = participants.filter((p) => p.status === "invited");
@@ -126,6 +129,30 @@ export default function GameManager({ game, participants, addable = [], splitter
             }}>{pending && <Spinner size={14} />} Cancelar jogo</button>
         )}
       </div>
+
+      {game.status !== "canceled" && (
+        <section className="card space-y-2 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold">📢 Observações do jogo</h2>
+            {game.notes?.trim() && !notesDirty && <span className="badge badge-warn">ativo</span>}
+          </div>
+          <p className="text-xs text-[var(--ink-soft)]">
+            Aparece em destaque, antes de tudo, na lista enviada ao grupo e no link de confirmação dos jogadores.
+            Ex.: &quot;Quadra 2 hoje&quot;, &quot;Levar bola&quot;, &quot;Chegar 10 min antes&quot;.
+          </p>
+          <textarea className="input min-h-20 w-full" maxLength={500} placeholder="Sem observações" value={notes}
+            onChange={(e) => setNotes(e.target.value)} disabled={pending} />
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn btn-primary btn-sm" disabled={pending || !notesDirty}
+              onClick={() => run(() => saveGameNotes(game.id, notes))}>{pending && <Spinner size={14} />} Salvar observações</button>
+            {notes.trim() && (
+              <button className="btn btn-outline btn-sm" disabled={pending}
+                onClick={() => { setNotes(""); run(() => saveGameNotes(game.id, ""), "Observações removidas."); }}>Limpar</button>
+            )}
+            {game.hasWhatsApp && <span className="text-xs text-[var(--ink-soft)]">Depois de salvar, use &quot;Enviar lista ao grupo&quot; para o aviso chegar agora.</span>}
+          </div>
+        </section>
+      )}
 
       <PendingDecisions
         participants={participants}
