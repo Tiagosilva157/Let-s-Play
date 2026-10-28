@@ -1,4 +1,4 @@
-// Sessão do jogador (pós-OTP): token 256-bit, hash SHA-256 no banco, cookie httpOnly.
+// Sessão do jogador (após senha, CPF ou código por e-mail): token 256-bit, hash SHA-256 no banco, cookie httpOnly.
 import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/server";

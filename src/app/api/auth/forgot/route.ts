@@ -1,4 +1,4 @@
-// "Esqueci a senha": manda um link por e-mail (Resend). Sem e-mail → orienta o código no WhatsApp.
+// "Esqueci a senha": manda um link por e-mail (Resend). Sem e-mail → a tela pede o e-mail e manda um código.
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { z } from "zod";

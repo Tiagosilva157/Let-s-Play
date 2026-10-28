@@ -1,4 +1,4 @@
-// Primeiro passo do login: diz como este telefone pode entrar (senha, CPF ou código).
+// Primeiro passo do login: diz como este telefone pode entrar (senha, CPF, código por e-mail ou cadastro).
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizePhone } from "@/lib/phone";
@@ -14,10 +14,11 @@ export async function POST(req: NextRequest) {
   if (!phone) return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
 
   const p = await findPlayerByPhone(phone);
-  if (!p) return NextResponse.json({ ok: true, exists: false, method: "otp" });
+  if (!p) return NextResponse.json({ ok: true, exists: false, method: "register" });
   if (!p.active) return NextResponse.json({ error: "player_inactive" }, { status: 403 });
-  // com senha → senha; sem senha mas com CPF → primeiro acesso por CPF; senão → código no WhatsApp
-  const method = p.password_hash ? "password" : p.cpf_cnpj ? "cpf" : "otp";
+  // com senha → senha; sem senha mas com CPF → primeiro acesso por CPF;
+  // com e-mail → código por e-mail; sem e-mail → pedimos o e-mail antes do código
+  const method = p.password_hash ? "password" : p.cpf_cnpj ? "cpf" : p.email ? "email" : "register";
   return NextResponse.json({
     ok: true, exists: true, method,
     firstName: p.name.split(" ")[0],

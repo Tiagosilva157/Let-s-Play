@@ -54,14 +54,15 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   const withdrawOpen = new Date(game.withdraw_until) > new Date();
   const withdrawDeadline = new Date(game.withdraw_until).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const router = useRouter();
-  const [step, setStep] = useState<"idle" | "phone" | "code" | "name" | "billing" | "password" | "cpf" | "setpassword" | "forgot_sent" | "reset">("idle");
-  // login por senha (o código no WhatsApp fica como caminho reserva)
+  const [step, setStep] = useState<"idle" | "phone" | "code" | "identify" | "billing" | "password" | "cpf" | "setpassword" | "forgot_sent" | "reset">("idle");
+  // login por senha; sem senha, código por E-MAIL (nunca pelo WhatsApp)
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [loginCpf, setLoginCpf] = useState("");
   const [emailHint, setEmailHint] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const [needsPassword, setNeedsPassword] = useState(false);
+  const [knownPlayer, setKnownPlayer] = useState(true); // telefone já cadastrado?
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -105,14 +106,15 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     code_expired: "Código expirado. Peça um novo.",
     too_many_requests: "Muitas tentativas. Aguarde alguns minutos.",
     too_many_attempts: "Muitas tentativas. Peça um novo código.",
-    send_failed: "Não conseguimos enviar o código pelo WhatsApp agora (falha no serviço de mensagens). Tente de novo em alguns minutos ou avise o organizador.",
     payment_provider_error: "Erro ao gerar o Pix. Tente novamente.",
     invalid_phone: "Telefone inválido. Use DDD + número.",
     server_error: "O sistema encontrou um problema ao processar. Tente novamente em instantes.",
     wrong_password: "Senha incorreta. Tente de novo ou use \"Esqueci minha senha\".",
-    cpf_mismatch: "CPF não confere com o cadastro deste telefone. Se preferir, entre com o código no WhatsApp.",
-    no_email: "Não temos seu e-mail cadastrado. Entre com o código no WhatsApp e cadastre um e-mail ao criar a senha.",
-    email_failed: "Não conseguimos enviar o e-mail agora. Tente de novo ou entre com o código no WhatsApp.",
+    cpf_mismatch: "CPF não confere com o cadastro deste telefone. Se preferir, receba um código por e-mail.",
+    no_email: "Não temos seu e-mail cadastrado. Informe um e-mail para receber o código de acesso.",
+    needs_email: "Informe seu e-mail para receber o código.",
+    needs_name: "Informe seu nome para criar o acesso.",
+    email_failed: "Não conseguimos enviar o e-mail agora. Tente de novo em instantes ou avise o organizador.",
     reset_invalid: "Este link de redefinição expirou ou já foi usado. Peça um novo em \"Esqueci minha senha\".",
     weak_password: "A senha precisa ter pelo menos 6 caracteres.",
     invalid_email: "E-mail inválido.",
@@ -132,6 +134,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
       const data = await res.json().catch(() => ({ error: "server_error" }));
       // não é erro: o sistema precisa de CPF/e-mail para emitir a cobrança
       if (data?.error === "needs_billing_data") return data;
+      if (data?.error === "no_email") return data; // sem e-mail: a tela pede um e manda o código
       if (!res.ok || data.error) {
         setError(errorMessages[data.error] ?? "Algo deu errado. Tente novamente.");
         return null;
@@ -145,9 +148,20 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     }
   }
 
-  async function requestOtp() {
-    const data = await api("/api/auth/otp/request", { phone });
-    if (data) setStep("code");
+  /** Pede o código por e-mail. Quem não tem e-mail no cadastro informa um na tela "identify". */
+  async function requestOtp(withContact?: { email: string; name?: string }) {
+    const data = await api("/api/auth/otp/request", { phone, email: withContact?.email, name: withContact?.name });
+    if (!data) return;
+    if (withContact?.email) setEmail(withContact.email);
+    setEmailHint(data.emailHint ?? emailHint);
+    setCode("");
+    setStep("code");
+  }
+
+  /** Sem e-mail no cadastro (ou telefone novo): coleta e-mail (e nome) antes do código. */
+  function askContact() {
+    setNeedsPassword(true);
+    setStep("identify");
   }
 
   /** Depois de entrar (por senha, CPF, código ou link de e-mail): cumpre a intenção e atualiza. */
@@ -165,16 +179,18 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     refresh();
   }
 
-  /** Telefone informado: descobre como entrar (senha, CPF ou código no WhatsApp). */
+  /** Telefone informado: descobre como entrar (senha, CPF, código por e-mail ou cadastro). */
   async function continueWithPhone() {
     const data = await api("/api/auth/lookup", { phone });
     if (!data) return;
     setFirstName(data.firstName ?? "");
     setEmailHint(data.emailHint ?? null);
+    setKnownPlayer(!!data.exists);
     if (data.method === "password") { setStep("password"); return; }
     if (data.method === "cpf") { setNeedsPassword(true); setStep("cpf"); return; }
-    setNeedsPassword(true); // sem senha ainda: depois do código, sugerimos criar uma
-    await requestOtp();
+    setNeedsPassword(true); // sem senha ainda: depois do código, a pessoa cria uma
+    if (data.method === "email") { await requestOtp(); return; }
+    askContact();
   }
 
   async function loginWithPassword() {
@@ -190,18 +206,17 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     await afterLogin();
   }
 
-  async function savePassword(skip = false) {
-    if (!skip) {
-      const data = await api("/api/auth/set-password", { password: newPassword, email: email || undefined });
-      if (!data) return;
-    }
+  async function savePassword() {
+    const data = await api("/api/auth/set-password", { password: newPassword, email: email || undefined });
+    if (!data) return;
     setNeedsPassword(false);
     await afterLogin();
   }
 
   async function forgotPassword() {
     const data = await api("/api/auth/forgot", { phone, slug });
-    if (!data) return;
+    if (!data) { return; }
+    if (data.error === "no_email") { askContact(); return; }
     setEmailHint(data.emailHint ?? emailHint);
     setStep("forgot_sent");
   }
@@ -215,11 +230,10 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     await afterLogin();
   }
 
-  async function verifyOtp(withName?: string) {
-    const data = await api("/api/auth/otp/verify", { phone, code, name: withName });
+  async function verifyOtp() {
+    const data = await api("/api/auth/otp/verify", { phone, code });
     if (!data) return;
-    if (data.needs_name) { setStep("name"); return; }
-    // quem ainda não tem senha cria uma agora (opcional) — próximo acesso sem código
+    // quem ainda não tem senha cria uma agora — próximo acesso sem código
     if (needsPassword) { setStep("setpassword"); return; }
     await afterLogin();
   }
@@ -410,7 +424,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               </button>
               <div className="flex flex-wrap justify-between gap-2 text-xs">
                 <button type="button" className="underline text-[var(--ink-soft)]" disabled={busy} onClick={forgotPassword}>Esqueci minha senha</button>
-                <button type="button" className="underline text-[var(--ink-soft)]" disabled={busy} onClick={() => { setNeedsPassword(false); requestOtp(); }}>Entrar com código no WhatsApp</button>
+                <button type="button" className="underline text-[var(--ink-soft)]" disabled={busy} onClick={() => { setNeedsPassword(false); if (emailHint) requestOtp(); else askContact(); }}>Entrar com código por e-mail</button>
               </div>
             </>
           )}
@@ -423,8 +437,8 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               <button className="btn btn-primary" onClick={firstAccessWithCpf} disabled={busy || loginCpf.length < 11}>
                 {busy ? <><Spinner /> Verificando...</> : "Continuar"}
               </button>
-              <button type="button" className="text-xs underline text-[var(--ink-soft)]" disabled={busy} onClick={requestOtp}>
-                Prefiro receber um código no WhatsApp
+              <button type="button" className="text-xs underline text-[var(--ink-soft)]" disabled={busy} onClick={() => { if (emailHint) requestOtp(); else askContact(); }}>
+                Prefiro receber um código por e-mail
               </button>
             </>
           )}
@@ -432,16 +446,13 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
           {step === "setpassword" && (
             <>
               <p className="text-sm font-medium">Crie uma senha para os próximos acessos</p>
-              <p className="text-xs text-[var(--ink-soft)]">Com ela você entra direto, sem esperar código no WhatsApp.</p>
+              <p className="text-xs text-[var(--ink-soft)]">Com ela você entra direto, sem esperar código. Guarde bem: é a sua chave de acesso.</p>
               <input className="input" type="password" placeholder="Nova senha (mínimo 6 caracteres)" value={newPassword} autoFocus
                 onChange={(e) => setNewPassword(e.target.value)} />
               <input className="input" type="email" placeholder="Seu e-mail (para recuperar a senha)" value={email}
                 onChange={(e) => setEmail(e.target.value)} />
-              <button className="btn btn-primary" onClick={() => savePassword()} disabled={busy || newPassword.length < 6}>
+              <button className="btn btn-primary" onClick={() => savePassword()} disabled={busy || newPassword.length < 6 || !email.includes("@")}>
                 {busy ? <><Spinner /> Salvando...</> : "Salvar e continuar"}
-              </button>
-              <button type="button" className="text-xs underline text-[var(--ink-soft)]" disabled={busy} onClick={() => savePassword(true)}>
-                Agora não, continuar sem senha
               </button>
             </>
           )}
@@ -451,7 +462,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm text-[var(--success)]">
                 📧 Enviamos um link para <b>{emailHint ?? "seu e-mail"}</b>. Abra o e-mail e toque em "Criar nova senha" (vale por 1 hora).
               </p>
-              <p className="text-xs text-[var(--ink-soft)]">Não chegou? Veja a caixa de spam ou <button type="button" className="underline" disabled={busy} onClick={() => { setNeedsPassword(false); requestOtp(); }}>entre com código no WhatsApp</button>.</p>
+              <p className="text-xs text-[var(--ink-soft)]">Não chegou? Confira a caixa de <b>spam / lixo eletrônico</b>, ou <button type="button" className="underline" disabled={busy} onClick={() => { setNeedsPassword(false); requestOtp(); }}>entre com um código por e-mail</button>.</p>
               <button className="btn btn-outline" onClick={() => setStep("password")}>Voltar</button>
             </>
           )}
@@ -469,13 +480,19 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
 
           {step === "code" && (
             <>
-              <label className="text-sm font-medium">Código recebido no WhatsApp</label>
+              <p className="rounded-lg bg-[var(--success-bg)] px-3 py-2 text-sm text-[var(--success)]">
+                📧 Enviamos um código de 6 dígitos para <b>{emailHint ?? "seu e-mail"}</b>.
+              </p>
+              <p className="text-xs text-[var(--ink-soft)]">
+                Confira a <b>caixa de entrada</b> e também a de <b>spam / lixo eletrônico</b>. O código vale por 10 minutos.
+              </p>
+              <label className="text-sm font-medium">Código recebido por e-mail</label>
               <input className="input text-center text-2xl tracking-[0.5em]" type="text" inputMode="numeric" maxLength={6}
                 value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} autoFocus />
               <button className="btn btn-primary" onClick={() => verifyOtp()} disabled={busy || code.length !== 6}>
                 {busy ? <><Spinner /> Verificando...</> : "Entrar"}
               </button>
-              <button className="btn btn-outline" onClick={requestOtp} disabled={busy}>Reenviar código</button>
+              <button className="btn btn-outline" onClick={() => requestOtp({ email: email.trim(), name: knownPlayer ? undefined : name.trim() })} disabled={busy}>Reenviar código</button>
             </>
           )}
 
@@ -497,14 +514,24 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
             </>
           )}
 
-          {step === "name" && (
+          {step === "identify" && (
             <>
-              <label className="text-sm font-medium">Como podemos te chamar?</label>
-              <input className="input" placeholder="Nome e sobrenome" value={name}
-                onChange={(e) => setName(e.target.value)} autoFocus />
-              <button className="btn btn-primary" onClick={() => verifyOtp(name)} disabled={busy || name.trim().length < 2}>
-                {busy && <Spinner />} Continuar
+              <p className="text-sm">
+                {knownPlayer
+                  ? <>Olá{firstName ? <>, <b>{firstName}</b></> : ""}! Ainda não temos seu e-mail. Informe um para receber o código de acesso.</>
+                  : <>Primeiro acesso! Informe seu nome e e-mail para receber o código de acesso.</>}
+              </p>
+              {!knownPlayer && (
+                <input className="input" placeholder="Nome e sobrenome" value={name}
+                  onChange={(e) => setName(e.target.value)} autoFocus />
+              )}
+              <input className="input" type="email" placeholder="Seu e-mail" value={email} autoFocus={knownPlayer}
+                onChange={(e) => setEmail(e.target.value)} />
+              <button className="btn btn-primary" onClick={() => requestOtp({ email: email.trim(), name: knownPlayer ? undefined : name.trim() })}
+                disabled={busy || !email.includes("@") || (!knownPlayer && name.trim().length < 2)}>
+                {busy ? <><Spinner /> Enviando...</> : "Enviar código por e-mail"}
               </button>
+              <p className="text-xs text-[var(--ink-soft)]">O código chega por e-mail. Não enviamos códigos pelo WhatsApp.</p>
             </>
           )}
 

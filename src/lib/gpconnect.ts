@@ -78,7 +78,7 @@ export const GpConnect = {
     });
   },
 
-  /** Mensagem individual (OTP, Pix do avulso, confirmações). */
+  /** Mensagem individual (Pix do avulso, confirmações). */
   sendTextMessage: (phone: string, message: string) => {
     const number = cleanPhone(phone);
     if (number.length < 12) throw new Error(`Telefone inválido para envio: "${phone}"`);
