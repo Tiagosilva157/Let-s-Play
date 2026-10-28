@@ -28,6 +28,15 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/** Observações do admin: *texto* vira negrito (mesma marcação do WhatsApp). */
+function renderNotes(text: string) {
+  return text.split(/(\*[^*\n]+\*)/g).map((part, i) =>
+    part.startsWith("*") && part.endsWith("*") && part.length > 2
+      ? <strong key={i} className="underline decoration-2 underline-offset-2">{part.slice(1, -1)}</strong>
+      : part
+  );
+}
+
 export default function PublicGame({ game, participants, player, myStatus, isMember, credit = null, pendingPix = null, slug = "", situation = null, otherGames = [], roster = null }: {
   game: Game;
   participants: Participant[];
@@ -275,9 +284,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
     <main className="mx-auto max-w-md px-4 py-6 space-y-4">
       {/* Observações do admin: antes de tudo */}
       {game.notes?.trim() && (
-        <div className="card border-2 border-[var(--warn)] bg-[var(--warn-bg)] p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--warn)]">📢 Aviso</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm font-medium">{game.notes.trim()}</p>
+        <div className="lp-alert p-5" role="alert">
+          <p className="text-sm font-extrabold uppercase tracking-widest">
+            <span className="lp-alert-icon">🚨</span> Atenção, leia antes de confirmar
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-lg font-bold leading-snug">{renderNotes(game.notes.trim())}</p>
         </div>
       )}
       {/* Cabeçalho do jogo */}

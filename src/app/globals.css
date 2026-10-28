@@ -111,3 +111,27 @@ body {
 
 /* Botão processando: além do spinner, escurece um pouco e mostra "aguarde" no cursor */
 .btn:disabled:has(.lp-spin) { opacity: 0.75; cursor: progress; }
+
+/* aviso do jogo no link público: bem chamativo, pulsando para ser visto de cara */
+@keyframes lp-alert-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 140 0 / 0.75); transform: scale(1); }
+  50% { box-shadow: 0 0 0 14px rgb(255 140 0 / 0); transform: scale(1.015); }
+}
+@keyframes lp-alert-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.lp-alert {
+  background: linear-gradient(135deg, #ff5a1f, #ffb000);
+  color: #ffffff;
+  border: 3px solid #ffffff;
+  outline: 3px solid #ff7a00;
+  border-radius: var(--radius);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  animation: lp-alert-pulse 1.4s ease-in-out infinite;
+}
+.lp-alert-icon { display: inline-block; animation: lp-alert-blink 1s step-end infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .lp-alert { animation: none; }
+  .lp-alert-icon { animation: none; }
+}
