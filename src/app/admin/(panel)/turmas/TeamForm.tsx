@@ -12,7 +12,13 @@ export interface TeamValues {
   address?: string; capacity?: number; monthly_fee?: number; dropin_fee?: number;
   open_hours_before?: number; confirm_hours_before?: number; withdraw_hours_before?: number;
   whatsapp_group_id?: string | null; message_mode?: string; individual_channel?: string;
+  due_reminder_channel?: string; due_reminder_days?: number[] | null;
 }
+
+const REMINDER_DAYS: { d: number; label: string }[] = [
+  { d: 7, label: "7 dias antes" }, { d: 5, label: "5 dias antes" }, { d: 3, label: "3 dias antes" },
+  { d: 2, label: "2 dias antes" }, { d: 1, label: "1 dia antes" }, { d: 0, label: "No dia do vencimento" },
+];
 
 export default function TeamForm({ team }: { team?: TeamValues }) {
   const router = useRouter();
@@ -72,6 +78,28 @@ export default function TeamForm({ team }: { team?: TeamValues }) {
         </select>
         <p className="mt-1 text-xs text-[var(--ink-soft)]">"Só pelo link" reduz muito o volume de mensagens do número. O grupo continua recebendo a lista normalmente.</p>
       </Field>
+
+      <Field label="Lembrete de mensalidade">
+        <select name="due_reminder_channel" className="input" defaultValue={t.due_reminder_channel ?? "individual"}>
+          <option value="group">Uma mensagem no grupo, com o link da turma (nada no privado)</option>
+          <option value="individual">No privado de cada mensalista, com o Pix</option>
+          <option value="off">Não enviar lembrete</option>
+        </select>
+        <p className="mt-1 text-xs text-[var(--ink-soft)]">
+          No grupo: o mensalista abre o link, faz login e paga em &quot;Minha situação&quot;. A mensagem sai às 8h, uma por dia marcado, só se houver mensalidade em aberto.
+        </p>
+      </Field>
+      <div className="block space-y-1">
+        <span className="text-sm font-medium">Quando lembrar</span>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {REMINDER_DAYS.map(({ d, label }) => (
+            <label key={d} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="due_reminder_days" value={d} defaultChecked={(t.due_reminder_days ?? [5, 0]).includes(d)} />
+              {label}
+            </label>
+          ))}
+        </div>
+      </div>
 
       <button className="btn btn-primary" disabled={pending}>{pending ? <><Spinner /> Salvando...</> : team?.id ? "Salvar alterações" : "Criar turma"}</button>
     </form>

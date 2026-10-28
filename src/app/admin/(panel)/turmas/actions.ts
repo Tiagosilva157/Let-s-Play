@@ -20,15 +20,21 @@ const TeamSchema = z.object({
   whatsapp_group_id: z.string().max(120).optional().or(z.literal("")),
   message_mode: z.enum(["instant", "batched", "scheduled", "manual"]),
   individual_channel: z.enum(["whatsapp", "portal"]).default("whatsapp"),
+  due_reminder_channel: z.enum(["individual", "group", "off"]).default("individual"),
 });
+const REMINDER_DAYS = [7, 5, 3, 2, 1, 0];
 
 export async function saveTeam(id: string | null, formData: FormData) {
   const admin = await requireAdmin();
   const parsed = TeamSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: "Dados inválidos: " + parsed.error.issues.map((i) => i.path.join(".")).join(", ") };
 
+  // checkboxes "due_reminder_days": várias entradas com o mesmo nome
+  const due_reminder_days = formData.getAll("due_reminder_days")
+    .map((v) => Number(v)).filter((d) => REMINDER_DAYS.includes(d)).sort((a, b) => b - a);
+
   const db = supabaseAdmin();
-  const values = { ...parsed.data, whatsapp_group_id: parsed.data.whatsapp_group_id || null };
+  const values = { ...parsed.data, whatsapp_group_id: parsed.data.whatsapp_group_id || null, due_reminder_days };
 
   if (id) {
     const { error } = await db.from("teams").update(values).eq("id", id);

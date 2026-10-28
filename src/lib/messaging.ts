@@ -420,6 +420,49 @@ export async function sendMembershipDueReminder(opts: {
   await enqueue({ team_id: opts.teamId, kind: "individual", recipient: opts.phone, body: opts.copypaste.trim(), dedupe_key: key });
 }
 
+/**
+ * Lembrete de mensalidade NO GRUPO (uma mensagem só, sem nada no privado):
+ * aponta para o link da turma, onde o mensalista faz login e paga o Pix em
+ * "Minha situação". Texto diferente antes do vencimento e no próprio dia.
+ */
+export function buildMembershipGroupReminder(opts: { teamName: string; slug: string; dueDate: string; daysBefore: number; pendingCount: number }) {
+  const link = publicLink(opts.slug);
+  const n = opts.pendingCount;
+  const open = n === 1 ? "1 mensalidade em aberto" : `${n} mensalidades em aberto`;
+  const lines = opts.daysBefore === 0
+    ? [
+      `⏰ *HOJE é o vencimento da mensalidade — ${opts.teamName}* (${fmtDate(opts.dueDate)})`,
+      ``,
+      `Ainda constam *${open}*. Pagando hoje, o mês fica sem pendência. ✅`,
+    ]
+    : [
+      `💳 *Mensalidade — ${opts.teamName}*`,
+      `Vence em *${fmtDate(opts.dueDate)}* (daqui a ${opts.daysBefore === 1 ? "1 dia" : `${opts.daysBefore} dias`}).`,
+      ``,
+      `Ainda constam *${open}*.`,
+    ];
+  lines.push(
+    ``,
+    `Como pagar (leva 1 minuto):`,
+    `1️⃣ Abra o link da turma`,
+    `2️⃣ Faça seu login`,
+    `3️⃣ Em *Minha situação*, toque em pagar e use o Pix`,
+  );
+  if (link) lines.push(``, `👉 ${link}`);
+  lines.push(``, `_Quem já pagou pode desconsiderar._`);
+  return lines.join("\n");
+}
+
+export async function enqueueMembershipGroupReminder(opts: {
+  teamId: string; groupId: string; teamName: string; slug: string; dueDate: string; daysBefore: number; pendingCount: number;
+}) {
+  const body = buildMembershipGroupReminder(opts);
+  await enqueue({
+    team_id: opts.teamId, kind: "group", recipient: opts.groupId, body,
+    dedupe_key: `sub_due_group:${opts.teamId}:${opts.dueDate}:${opts.daysBefore}`,
+  });
+}
+
 export async function enqueueIndividual(teamId: string | null, phone: string, body: string, opts?: { essential?: boolean }) {
   await enqueue({ team_id: teamId, kind: "individual", recipient: phone, body, essential: opts?.essential });
 }
