@@ -54,35 +54,65 @@ export async function GET(req: NextRequest) {
     return !!data;
   }
 
-  // lembretes de mensalidade: 5 dias antes E no dia do vencimento → Pix no WhatsApp
-  const { sendMembershipDueReminder } = await import("@/lib/messaging");
+  // lembretes de mensalidade, conforme a configuração de cada turma:
+  //   individual → Pix no privado de cada mensalista (nos dias escolhidos)
+  //   group      → UMA mensagem no grupo com o link da turma (nada no privado)
+  //   off        → nada
+  const { sendMembershipDueReminder, enqueueMembershipGroupReminder } = await import("@/lib/messaging");
   const plusDays = (n: number) => new Date(new Date(today + "T12:00:00-03:00").getTime() + n * 86400e3)
     .toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   let dueReminders = 0;
-  for (const daysBefore of [5, 0]) {
-    const { data: due } = await db
-      .from("charges")
-      .select("id, amount, due_date, asaas_payment_id, team_id, players(name, phone), teams(name)")
-      .eq("type", "subscription")
-      .in("status", ["pending", "overdue"])
-      .eq("due_date", plusDays(daysBefore))
-      .not("asaas_payment_id", "is", null)
-      .limit(200);
-    for (const c of due ?? []) {
-      const key = daysBefore === 0 ? `sub_due:${c.id}` : `sub_due${daysBefore}:${c.id}`;
-      if (await alreadyDispatched(key)) continue;
-      const pl = c.players as unknown as { name: string; phone: string };
-      const tm = c.teams as unknown as { name: string };
-      if (!pl?.phone) continue;
-      try {
-        const qr = await Asaas.getPixQr(c.asaas_payment_id!);
-        await sendMembershipDueReminder({
-          teamId: c.team_id, phone: pl.phone, playerName: pl.name, teamName: tm?.name ?? "",
-          amount: Number(c.amount), dueDate: c.due_date, copypaste: qr.payload, chargeId: c.id, daysBefore,
-        });
-        dueReminders++;
-      } catch (e) {
-        console.error("[cron] lembrete de mensalidade falhou:", c.id, String(e).slice(0, 150));
+  const { data: teamsCfg } = await db.from("teams")
+    .select("id, name, slug, whatsapp_group_id, due_reminder_channel, due_reminder_days")
+    .eq("status", "active");
+  for (const t of teamsCfg ?? []) {
+    const channel = (t.due_reminder_channel as string) ?? "individual";
+    if (channel === "off") continue;
+    const days = Array.from(new Set(((t.due_reminder_days as number[] | null) ?? [5, 0]).filter((d) => d >= 0 && d <= 30)));
+    for (const daysBefore of days) {
+      const dueDate = plusDays(daysBefore);
+      const { data: due } = await db
+        .from("charges")
+        .select("id, amount, due_date, asaas_payment_id, team_id, players(name, phone)")
+        .eq("type", "subscription")
+        .eq("team_id", t.id)
+        .in("status", ["pending", "overdue"])
+        .eq("due_date", dueDate)
+        .not("asaas_payment_id", "is", null)
+        .limit(200);
+      if (!due?.length) continue;
+
+      if (channel === "group") {
+        if (!t.whatsapp_group_id) continue;
+        const key = `sub_due_group:${t.id}:${dueDate}:${daysBefore}`;
+        if (await alreadyDispatched(key)) continue;
+        try {
+          await enqueueMembershipGroupReminder({
+            teamId: t.id, groupId: t.whatsapp_group_id, teamName: t.name, slug: t.slug,
+            dueDate, daysBefore, pendingCount: due.length,
+          });
+          dueReminders++;
+        } catch (e) {
+          console.error("[cron] lembrete de mensalidade no grupo falhou:", t.id, String(e).slice(0, 150));
+        }
+        continue;
+      }
+
+      for (const c of due) {
+        const key = daysBefore === 0 ? `sub_due:${c.id}` : `sub_due${daysBefore}:${c.id}`;
+        if (await alreadyDispatched(key)) continue;
+        const pl = c.players as unknown as { name: string; phone: string };
+        if (!pl?.phone) continue;
+        try {
+          const qr = await Asaas.getPixQr(c.asaas_payment_id!);
+          await sendMembershipDueReminder({
+            teamId: c.team_id, phone: pl.phone, playerName: pl.name, teamName: t.name,
+            amount: Number(c.amount), dueDate: c.due_date, copypaste: qr.payload, chargeId: c.id, daysBefore,
+          });
+          dueReminders++;
+        } catch (e) {
+          console.error("[cron] lembrete de mensalidade falhou:", c.id, String(e).slice(0, 150));
+        }
       }
     }
   }
