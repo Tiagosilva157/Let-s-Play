@@ -23,7 +23,8 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
     .from("game_participants")
     .select("id, kind, status, reserved_until, confirmed_at, players(id, name, phone, skill_level), charges(id, status, amount)")
     .eq("game_id", id)
-    .order("confirmed_at", { ascending: true });
+    .order("slot_at", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
 
   const team = game.teams as unknown as { name: string; capacity: number; whatsapp_group_id: string | null };
 

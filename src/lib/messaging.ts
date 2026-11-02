@@ -90,7 +90,7 @@ export async function buildRoster(gameId: string): Promise<{ roster: Roster; gam
 
   const [{ data: teamMembersRaw }, { data: parts }] = await Promise.all([
     db.from("team_members").select("player_id, players(name)").eq("team_id", t.id).eq("status", "active"),
-    db.from("game_participants").select("player_id, kind, status, confirmed_at, created_at, players(name)").eq("game_id", gameId),
+    db.from("game_participants").select("player_id, kind, status, slot_at, confirmed_at, created_at, players(name)").eq("game_id", gameId),
   ]);
   // jogo em que mensalista paga: ninguém tem vaga garantida — todos entram como não mensalistas
   const teamMembers = g.members_pay ? [] : teamMembersRaw;
@@ -107,10 +107,12 @@ export async function buildRoster(gameId: string): Promise<{ roster: Roster; gam
 
   const membersHolding = members.filter((m) => m.status === "invited" || m.status === "confirmed").length;
 
-  // avulsos: quem não é mensalista da turma
+  // avulsos: quem não é mensalista da turma, na ordem em que GANHARAM a vaga
+  // (slot_at: não muda quando o Pix é pago, então a posição fica estável)
+  const slotKey = (p: { slot_at?: string | null; confirmed_at?: string | null; created_at: string }) => String(p.slot_at ?? p.confirmed_at ?? p.created_at);
   const dropinParts = (parts ?? [])
     .filter((p) => !memberIds.has(p.player_id) && ["confirmed", "reserved"].includes(p.status))
-    .sort((a, b) => String(a.confirmed_at ?? a.created_at).localeCompare(String(b.confirmed_at ?? b.created_at)));
+    .sort((a, b) => slotKey(a).localeCompare(slotKey(b)));
   const dropins: RosterEntry[] = dropinParts.map((p) => ({
     name: (p.players as unknown as { name: string }).name, status: p.status,
   }));
