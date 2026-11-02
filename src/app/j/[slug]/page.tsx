@@ -39,7 +39,7 @@ export default async function PublicTeamPage({ params, searchParams }: {
     .order("confirmed_at", { ascending: true });
 
   const player = await getSessionPlayer();
-  let myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null = null;
+  let myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean; source?: string } | null = null;
   let isMember = false;
   let credit: number | null = null;
   // Pix em aberto (reserva ou promoção da fila): mostrado direto na tela — o
@@ -49,7 +49,7 @@ export default async function PublicTeamPage({ params, searchParams }: {
   if (player) {
     const { data: gp } = await db
       .from("game_participants")
-      .select("status, kind, promoted_from_waitlist")
+      .select("status, kind, promoted_from_waitlist, source")
       .eq("game_id", game.game_id)
       .eq("player_id", player.id)
       .maybeSingle();

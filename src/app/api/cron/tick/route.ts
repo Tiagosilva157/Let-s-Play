@@ -1,7 +1,7 @@
 // Cron principal (1/min): expira reservas, abre/fecha listas, despacha a fila de mensagens.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { dispatchPending, enqueueListOpened } from "@/lib/messaging";
+import { dispatchPending, enqueueListOpened, enqueueListUpdate } from "@/lib/messaging";
 import { processExpirations, processPromotions, type ExpiredRow } from "@/lib/waitlist";
 
 export const maxDuration = 60;
@@ -40,10 +40,19 @@ export async function GET(req: NextRequest) {
     await enqueueListOpened(gameId).catch((e) => console.error("[whatsapp] abertura:", e));
   }
 
-  // 3. fechar listas
+  // 3. prazo dos mensalistas: libera as vagas de quem não respondeu (por turma, se configurado),
+  //    sobe a lista de espera (Pix para avulso promovido) e atualiza a lista no grupo
+  const { data: released } = await db.rpc("fn_release_invited");
+  report.released = released;
+  for (const r of (released?.released ?? []) as { game_id: string; released: number; promoted?: string[] | null }[]) {
+    if (r.promoted?.length) await processPromotions(r.game_id, r.promoted).catch((e) => console.error("[prazo] promoção:", e));
+    else await enqueueListUpdate(r.game_id).catch((e) => console.error("[prazo] lista:", e));
+  }
+
+  // 4. fechar listas
   report.closed = (await db.rpc("fn_close_lists")).data;
 
-  // 4. despachar mensagens pendentes (rede de segurança do envio imediato)
+  // 5. despachar mensagens pendentes (rede de segurança do envio imediato)
   report.messages = await dispatchPending();
 
   return NextResponse.json({ ok: true, ...report });

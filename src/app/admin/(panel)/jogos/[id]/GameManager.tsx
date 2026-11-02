@@ -40,6 +40,7 @@ const ACTION_LABEL: Record<string, string> = {
   reset_game: "Lista resetada",
   save_teams_split: "Divisão de times salva",
   save_notes: "Observações do jogo atualizadas",
+  release_invited: "Prazo dos mensalistas: vagas de quem não respondeu foram liberadas (automático)",
   send_teams: "Times enviados ao grupo",
 };
 
