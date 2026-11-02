@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { hoursBeforeGame } from "@/lib/deadline";
 import { z } from "zod";
 import { requireAdmin, auditAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -21,7 +22,12 @@ const TeamSchema = z.object({
   message_mode: z.enum(["instant", "batched", "scheduled", "manual"]),
   individual_channel: z.enum(["whatsapp", "portal"]).default("whatsapp"),
   due_reminder_channel: z.enum(["individual", "group", "off"]).default("individual"),
+  // prazo limite dos mensalistas (dia da semana + horário) → guardado em horas antes do jogo
+  release_enabled: z.string().optional(),
+  release_weekday: z.coerce.number().int().min(0).max(6).optional(),
+  release_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 });
+
 const REMINDER_DAYS = [7, 5, 3, 2, 1, 0];
 
 export async function saveTeam(id: string | null, formData: FormData) {
@@ -33,8 +39,19 @@ export async function saveTeam(id: string | null, formData: FormData) {
   const due_reminder_days = formData.getAll("due_reminder_days")
     .map((v) => Number(v)).filter((d) => REMINDER_DAYS.includes(d)).sort((a, b) => b - a);
 
+  const { release_enabled, release_weekday, release_time, ...fields } = parsed.data;
+  let release_invited_hours_before: number | null = null;
+  if (release_enabled === "on") {
+    if (release_weekday == null || !release_time) return { error: "Informe o dia e o horário do prazo dos mensalistas." };
+    const h = hoursBeforeGame(fields.weekday, fields.game_time, release_weekday, release_time);
+    if (h <= 0) return { error: "O prazo dos mensalistas precisa ser antes do horário do jogo." };
+    if (h >= fields.open_hours_before) return { error: "O prazo dos mensalistas precisa ser depois da abertura da lista (senão as vagas seriam liberadas na hora em que a lista abre)." };
+    if (h < fields.confirm_hours_before) return { error: "O prazo dos mensalistas precisa ser antes do fim das confirmações (\"Confirmar até\")." };
+    release_invited_hours_before = Math.round(h * 100) / 100;
+  }
+
   const db = supabaseAdmin();
-  const values = { ...parsed.data, whatsapp_group_id: parsed.data.whatsapp_group_id || null, due_reminder_days };
+  const values = { ...fields, whatsapp_group_id: fields.whatsapp_group_id || null, due_reminder_days, release_invited_hours_before };
 
   if (id) {
     const { error } = await db.from("teams").update(values).eq("id", id);

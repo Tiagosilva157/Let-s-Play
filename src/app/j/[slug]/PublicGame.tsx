@@ -15,6 +15,7 @@ interface Game {
   dropin_fee: number; spots_available: number;
   title?: string | null; members_pay?: boolean; generated?: boolean;
   notes?: string | null;
+  members_confirm_until?: string | null;
 }
 interface OtherGame { id: string; date: string; time: string; title: string | null; oneOff: boolean }
 interface Participant { display_name: string; kind: string; status: string }
@@ -41,7 +42,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
   game: Game;
   participants: Participant[];
   player: Player | null;
-  myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean } | null;
+  myStatus: { status: string; kind: string; promoted_from_waitlist?: boolean; source?: string } | null;
   isMember: boolean;
   credit?: number | null; // crédito disponível do avulso nesta turma (cobre a taxa)
   pendingPix?: Pix | null; // Pix em aberto ao abrir a página (reserva/promoção)
@@ -135,6 +136,7 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
       // não é erro: o sistema precisa de CPF/e-mail para emitir a cobrança
       if (data?.error === "needs_billing_data") return data;
       if (data?.error === "no_email") return data; // sem e-mail: a tela pede um e manda o código
+      if (data?.waitlisted) return data; // lista cheia: entrou na lista de espera (não é erro)
       if (!res.ok || data.error) {
         setError(errorMessages[data.error] ?? "Algo deu errado. Tente novamente.");
         return null;
@@ -571,6 +573,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               {myStatus?.status === "invited" && (
                 <>
                   <p className="text-sm text-[var(--ink-soft)]">Você é mensalista. Vai jogar?</p>
+                  {game.members_confirm_until && new Date(game.members_confirm_until) > new Date() && (
+                    <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-xs font-medium text-[var(--warn)]">
+                      ⏳ Sua vaga fica reservada até <b>{new Date(game.members_confirm_until).toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b>. Depois disso ela é liberada e você só entra se ainda houver vaga.
+                    </p>
+                  )}
                   <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={busy || closed}>
                     {busy ? <Spinner /> : "✓"} Vou jogar
                   </button>
@@ -583,9 +590,11 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               {myStatus?.status === "waitlist" && (
                 <>
                   <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm font-semibold text-[var(--warn)]">
-                    Você está na lista de espera. Se abrir vaga, o Pix chega no seu WhatsApp com o prazo para pagar. Fique de olho!
+                    {myStatus.kind === "member"
+                      ? "Você está na lista de espera. Se abrir vaga, você entra automaticamente (sem pagar, você é mensalista) e a lista do grupo é atualizada."
+                      : "Você está na lista de espera. Se abrir vaga, o Pix chega no seu WhatsApp com o prazo para pagar. Fique de olho!"}
                   </p>
-                  <button className="btn btn-outline" onClick={() => doAction("withdraw")} disabled={busy}>
+                  <button className="btn btn-outline" onClick={() => doAction(myStatus.kind === "member" ? "decline" : "withdraw")} disabled={busy}>
                     {busy && <Spinner />} Sair da lista de espera
                   </button>
                 </>
@@ -617,7 +626,9 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
                   <>
                     {myStatus != null && (
                       <p className="rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-sm text-[var(--warn)]">
-                        Você avisou que não vem. Mudou de ideia? Confirme abaixo (se ainda houver vaga).
+                        {myStatus.source === "system" && myStatus.status === "declined"
+                          ? "O prazo de confirmação dos mensalistas terminou e sua vaga reservada foi liberada. Você continua mensalista normalmente — se ainda houver vaga, confirme abaixo; se a lista estiver cheia, você entra na lista de espera."
+                          : "Você avisou que não vem. Mudou de ideia? Confirme abaixo (se ainda houver vaga)."}
                       </p>
                     )}
                     <button className="btn btn-success" onClick={() => doAction("confirm")} disabled={busy || closed}>

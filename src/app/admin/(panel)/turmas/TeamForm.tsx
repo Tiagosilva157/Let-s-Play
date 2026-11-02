@@ -13,6 +13,16 @@ export interface TeamValues {
   open_hours_before?: number; confirm_hours_before?: number; withdraw_hours_before?: number;
   whatsapp_group_id?: string | null; message_mode?: string; individual_channel?: string;
   due_reminder_channel?: string; due_reminder_days?: number[] | null;
+  release_invited_hours_before?: number | string | null;
+}
+
+/** Converte "horas antes do jogo" de volta para dia da semana + horário do prazo. */
+function deadlineFromHours(gameWeekday: number, gameTime: string, hours: number) {
+  const mins = Number(gameTime.slice(0, 2)) * 60 + Number(gameTime.slice(3, 5)) - Math.round(hours * 60);
+  const week = 7 * 1440;
+  const abs = ((gameWeekday * 1440 + mins) % week + week) % week;
+  const wd = Math.floor(abs / 1440); const m = abs % 1440;
+  return { weekday: wd, time: `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}` };
 }
 
 const REMINDER_DAYS: { d: number; label: string }[] = [
@@ -34,6 +44,15 @@ export default function TeamForm({ team }: { team?: TeamValues }) {
   }
 
   const t = team ?? {};
+  const relHours = t.release_invited_hours_before != null ? Number(t.release_invited_hours_before) : null;
+  const [gameWeekday, setGameWeekday] = useState(t.weekday ?? 1);
+  const [gameTime, setGameTime] = useState(t.game_time?.slice(0, 5) ?? "20:00");
+  const [releaseOn, setReleaseOn] = useState(relHours != null);
+  const initial = relHours != null ? deadlineFromHours(t.weekday ?? 1, t.game_time?.slice(0, 5) ?? "20:00", relHours) : { weekday: t.weekday ?? 1, time: "12:00" };
+  const [relWeekday, setRelWeekday] = useState(initial.weekday);
+  const [relTime, setRelTime] = useState(initial.time);
+  const mins = (x: string) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5));
+  const previewHours = (((gameWeekday * 1440 + mins(gameTime)) - (relWeekday * 1440 + mins(relTime)) + 7 * 1440) % (7 * 1440)) / 60;
   return (
     <form action={submit} className="card max-w-xl space-y-4 p-6">
       {error && <p className="rounded-lg bg-[var(--danger-bg)] px-3 py-2 text-sm text-[var(--danger)]">{error}</p>}
@@ -44,11 +63,11 @@ export default function TeamForm({ team }: { team?: TeamValues }) {
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Dia da semana">
-          <select name="weekday" className="input" defaultValue={t.weekday ?? 1}>
+          <select name="weekday" className="input" value={gameWeekday} onChange={(e) => setGameWeekday(Number(e.target.value))}>
             {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
           </select>
         </Field>
-        <Field label="Horário"><input name="game_time" type="time" className="input" defaultValue={t.game_time?.slice(0, 5) ?? "20:00"} required /></Field>
+        <Field label="Horário"><input name="game_time" type="time" className="input" value={gameTime} onChange={(e) => setGameTime(e.target.value)} required /></Field>
       </div>
       <Field label="Endereço da quadra"><input name="address" className="input" defaultValue={t.address} required /></Field>
       <div className="grid grid-cols-3 gap-3">
@@ -78,6 +97,35 @@ export default function TeamForm({ team }: { team?: TeamValues }) {
         </select>
         <p className="mt-1 text-xs text-[var(--ink-soft)]">"Só pelo link" reduz muito o volume de mensagens do número. O grupo continua recebendo a lista normalmente.</p>
       </Field>
+
+      <div className="card space-y-2 p-3">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" name="release_enabled" checked={releaseOn} onChange={(e) => setReleaseOn(e.target.checked)} />
+          Prazo limite de confirmação dos mensalistas
+        </label>
+        <p className="text-xs text-[var(--ink-soft)]">
+          Quando o prazo chega, mensalistas que ainda não responderam passam para &quot;Não vai&quot; e as vagas deles são liberadas
+          (lista de espera sobe, grupo recebe a lista atualizada). Quem já confirmou não é afetado. Depois do prazo o mensalista
+          ainda pode confirmar se houver vaga, ou entrar na lista de espera.
+        </p>
+        {releaseOn && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Dia do prazo">
+              <select name="release_weekday" className="input" value={relWeekday} onChange={(e) => setRelWeekday(Number(e.target.value))}>
+                {WEEKDAYS.map((w, i) => <option key={i} value={i}>{w}</option>)}
+              </select>
+            </Field>
+            <Field label="Horário do prazo">
+              <input name="release_time" type="time" className="input" value={relTime} onChange={(e) => setRelTime(e.target.value)} />
+            </Field>
+            <p className="col-span-2 text-xs text-[var(--ink-soft)]">
+              {previewHours > 0
+                ? <>= {previewHours % 1 === 0 ? previewHours : previewHours.toFixed(1)} h antes do jogo ({WEEKDAYS[gameWeekday]} {gameTime}). Precisa ficar depois da abertura da lista e antes do &quot;Confirmar até&quot;.</>
+                : <>O prazo precisa ser antes do horário do jogo.</>}
+            </p>
+          </div>
+        )}
+      </div>
 
       <Field label="Lembrete de mensalidade">
         <select name="due_reminder_channel" className="input" defaultValue={t.due_reminder_channel ?? "individual"}>
