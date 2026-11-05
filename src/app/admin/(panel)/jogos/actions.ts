@@ -189,6 +189,24 @@ export async function cancelGame(gameId: string, reason: string) {
   }
   await auditAdmin(admin.id, "cancel_game_credits", "games", gameId, { credited });
 
+  // reservas com Pix pendente: cancela a cobrança e encerra a reserva; lista de
+  // espera: encerra a fila. Jogo cancelado não movimenta mais nada (ver 0024).
+  const { data: openRows } = await db.from("game_participants")
+    .select("id, player_id, status")
+    .eq("game_id", gameId).in("status", ["reserved", "waitlist"]);
+  for (const r of openRows ?? []) {
+    if (r.status === "reserved") {
+      const { data: pending } = await db.from("charges").select("id, asaas_payment_id")
+        .eq("game_id", gameId).eq("player_id", r.player_id).eq("status", "pending").maybeSingle();
+      if (pending?.asaas_payment_id) await Asaas.cancelPayment(pending.asaas_payment_id).catch(() => {});
+      if (pending) await db.from("charges").update({ status: "canceled" }).eq("id", pending.id);
+    }
+  }
+  if (openRows?.length) {
+    await db.from("game_participants").update({ status: "withdrawn", source: "system" })
+      .in("id", openRows.map((r) => r.id));
+  }
+
   const built = await buildListMessage(gameId);
   if (built?.team.whatsapp_group_id) {
     // jogo que já deveria ter acontecido: registro após o fato, texto diferente
