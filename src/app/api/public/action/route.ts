@@ -29,10 +29,12 @@ export async function POST(req: NextRequest) {
 
   const { data: game } = await db
     .from("games")
-    .select("id, team_id, date, time, members_pay, dropin_fee_override, teams(dropin_fee, name, reservation_minutes, waitlist_minutes)")
+    .select("id, team_id, date, time, status, members_pay, dropin_fee_override, teams(dropin_fee, name, reservation_minutes, waitlist_minutes)")
     .eq("id", gameId)
     .single();
   if (!game) return NextResponse.json({ error: "game_not_found" }, { status: 404 });
+  // jogo cancelado: nenhuma ação (o banco também bloqueia; aqui a resposta é clara)
+  if (game.status === "canceled") return NextResponse.json({ error: "game_canceled" }, { status: 200 });
   // jogo único com valor próprio: vale para Pix, crédito e mensagens daqui em diante
   if (game.dropin_fee_override != null) {
     (game.teams as unknown as { dropin_fee: number }).dropin_fee = Number(game.dropin_fee_override);

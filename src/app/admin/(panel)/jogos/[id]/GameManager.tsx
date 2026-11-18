@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resolvePendingBatch, resetGame, restoreGame, backToScheduled, saveGameNotes } from "../actions";
+import { adminConfirm, adminRemove, adminAddPlayer, cancelGame, toggleList, sendListNow, resolvePendingReview, resolvePendingBatch, resetGame, restoreGame, backToScheduled, saveGameNotes, adminDecline } from "../actions";
 import Spinner from "@/components/Spinner";
 
 interface Participant {
@@ -40,6 +40,7 @@ const ACTION_LABEL: Record<string, string> = {
   reset_game: "Lista resetada",
   save_teams_split: "Divisão de times salva",
   save_notes: "Observações do jogo atualizadas",
+  admin_decline: "Admin marcou mensalista como \"Não vai\"",
   release_invited: "Prazo dos mensalistas: vagas de quem não respondeu foram liberadas (automático)",
   send_teams: "Times enviados ao grupo",
 };
@@ -204,7 +205,13 @@ export default function GameManager({ game, participants, addable = [], splitter
         <Section title={`Mensalistas sem resposta (${invited.length})`}>
           {invited.map((p) => (
             <Row key={p.id} p={p} pending={pending}
-              actions={<button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => adminConfirm(game.id, p.playerId, "member"))}>{pending && <Spinner size={14} />} Confirmar</button>} />
+              actions={
+                <div className="flex gap-1">
+                  <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => adminConfirm(game.id, p.playerId, "member"))}>{pending && <Spinner size={14} />} Confirmar</button>
+                  <button className="btn btn-danger-soft btn-sm" disabled={pending} title="Libera a vaga dele para a lista de espera / avulsos"
+                    onClick={() => { if (confirm(`Marcar ${p.name} como "Não vai"? A vaga dele é liberada e a lista de espera sobe.`)) run(() => adminDecline(game.id, p.playerId)); }}>{pending && <Spinner size={14} />} Não vai</button>
+                </div>
+              } />
           ))}
         </Section>
       )}
@@ -230,8 +237,21 @@ export default function GameManager({ game, participants, addable = [], splitter
                     <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => resolvePendingReview(p.id, "credit"), "Crédito gerado.")}>{pending && <Spinner size={14} />} Crédito</button>
                     <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => resolvePendingReview(p.id, "refund"), "Estorno concluído.")}>{pending && <Spinner size={14} />} Estornar</button>
                   </div>
+                ) : p.status === "reserved" ? (
+                  <div className="flex gap-1">
+                    <button className="btn btn-outline btn-sm" disabled={pending} title="Confirma sem cobrar (ex.: pagou em dinheiro); o Pix pendente é cancelado"
+                      onClick={() => { if (confirm(`Confirmar ${p.name} sem cobrança? O Pix pendente será cancelado.`)) run(() => adminConfirm(game.id, p.playerId, p.kind)); }}>{pending && <Spinner size={14} />} Confirmar sem cobrar</button>
+                    <button className="btn btn-danger-soft btn-sm" disabled={pending} title="Cancela o Pix pendente, libera a vaga e sobe a lista de espera"
+                      onClick={() => { if (confirm(`Tirar ${p.name} da lista? O Pix pendente é cancelado e a vaga vai para o próximo da espera.`)) run(() => adminRemove(game.id, p.playerId), `${p.name} saiu da lista.`); }}>{pending && <Spinner size={14} />} Remover</button>
+                  </div>
                 ) : ["waitlist", "declined", "withdrawn"].includes(p.status) ? (
-                  <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => adminConfirm(game.id, p.playerId, p.kind))}>{pending && <Spinner size={14} />} Confirmar manualmente</button>
+                  <div className="flex gap-1">
+                    <button className="btn btn-outline btn-sm" disabled={pending} onClick={() => run(() => adminConfirm(game.id, p.playerId, p.kind))}>{pending && <Spinner size={14} />} Confirmar manualmente</button>
+                    {p.status === "waitlist" && (
+                      <button className="btn btn-danger-soft btn-sm" disabled={pending} title="Tira da lista de espera"
+                        onClick={() => { if (confirm(`Tirar ${p.name} da lista de espera?`)) run(() => adminRemove(game.id, p.playerId), `${p.name} saiu da lista de espera.`); }}>{pending && <Spinner size={14} />} Remover</button>
+                    )}
+                  </div>
                 ) : null
               } />
           ))}

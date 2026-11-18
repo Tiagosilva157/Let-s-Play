@@ -15,6 +15,13 @@ export async function adminConfirm(gameId: string, playerId: string, kind: "memb
     // admin pode confirmar avulso manualmente (ex.: pagou em dinheiro)
     await db.from("game_participants")
       .upsert({ game_id: gameId, player_id: playerId, kind: "dropin", status: "confirmed", source: "admin", confirmed_at: new Date().toISOString() }, { onConflict: "game_id,player_id" });
+    // se havia Pix pendente (reserva), cancela para não ficar cobrança órfã
+    const { data: pending } = await db.from("charges").select("id, asaas_payment_id")
+      .eq("game_id", gameId).eq("player_id", playerId).eq("status", "pending").maybeSingle();
+    if (pending) {
+      if (pending.asaas_payment_id) await Asaas.cancelPayment(pending.asaas_payment_id).catch(() => {});
+      await db.from("charges").update({ status: "canceled" }).eq("id", pending.id);
+    }
   }
   await auditAdmin(admin.id, "admin_confirm", "game_participants", `${gameId}:${playerId}`);
   await enqueueListUpdate(gameId).catch(() => {});
@@ -74,6 +81,24 @@ export async function adminAddPlayer(gameId: string, playerId: string) {
   await enqueueListUpdate(gameId).catch(() => {});
   revalidatePath(`/admin/jogos/${gameId}`);
   return { ok: true };
+}
+
+/** Admin marca um mensalista como "Não vai": libera a vaga, sobe a lista de espera e atualiza o grupo. */
+export async function adminDecline(gameId: string, playerId: string) {
+  const admin = await requireAdmin();
+  const db = supabaseAdmin();
+  const { data } = await db.rpc("fn_decline_member", { p_game_id: gameId, p_player_id: playerId, p_source: "admin" });
+  if (!data?.ok) return { error: data?.error === "game_canceled" ? "Este jogo está cancelado." : "Não foi possível marcar como \"Não vai\"." };
+  await auditAdmin(admin.id, "admin_decline", "game_participants", `${gameId}:${playerId}`);
+  const promoted = (data.promoted ?? []) as string[];
+  if (promoted.length) {
+    const { processPromotions } = await import("@/lib/waitlist");
+    await processPromotions(gameId, promoted).catch(() => {});
+  } else {
+    await enqueueListUpdate(gameId).catch(() => {});
+  }
+  revalidatePath(`/admin/jogos/${gameId}`);
+  return { ok: true, note: promoted.length ? "Marcado como \"Não vai\". A vaga foi liberada e o primeiro da lista de espera subiu." : "Marcado como \"Não vai\". A vaga foi liberada." };
 }
 
 export async function adminRemove(gameId: string, playerId: string) {
@@ -188,6 +213,24 @@ export async function cancelGame(gameId: string, reason: string) {
     }
   }
   await auditAdmin(admin.id, "cancel_game_credits", "games", gameId, { credited });
+
+  // reservas com Pix pendente: cancela a cobrança e encerra a reserva; lista de
+  // espera: encerra a fila. Jogo cancelado não movimenta mais nada (ver 0024).
+  const { data: openRows } = await db.from("game_participants")
+    .select("id, player_id, status")
+    .eq("game_id", gameId).in("status", ["reserved", "waitlist"]);
+  for (const r of openRows ?? []) {
+    if (r.status === "reserved") {
+      const { data: pending } = await db.from("charges").select("id, asaas_payment_id")
+        .eq("game_id", gameId).eq("player_id", r.player_id).eq("status", "pending").maybeSingle();
+      if (pending?.asaas_payment_id) await Asaas.cancelPayment(pending.asaas_payment_id).catch(() => {});
+      if (pending) await db.from("charges").update({ status: "canceled" }).eq("id", pending.id);
+    }
+  }
+  if (openRows?.length) {
+    await db.from("game_participants").update({ status: "withdrawn", source: "system" })
+      .in("id", openRows.map((r) => r.id));
+  }
 
   const built = await buildListMessage(gameId);
   if (built?.team.whatsapp_group_id) {

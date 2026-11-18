@@ -24,6 +24,12 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
   const filtered = players.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()) || p.phone.includes(search)
   );
+  const counts = {
+    active: players.filter((p) => p.active).length,
+    inactive: players.filter((p) => !p.active).length,
+    members: players.filter((p) => p.teams.length > 0).length,
+    dropins: players.filter((p) => p.teams.length === 0).length,
+  };
 
   function submit(formData: FormData) {
     startTransition(async () => {
@@ -49,10 +55,20 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold">Jogadores</h1>
-        <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(!showForm); setError(""); }}>
-          + Novo jogador
-        </button>
+        <div>
+          <h1 className="text-2xl font-bold">Jogadores <span className="text-base font-semibold text-[var(--ink-soft)]">({players.length})</span></h1>
+          <p className="text-xs text-[var(--ink-soft)]">
+            {counts.active} ativos · {counts.members} mensalistas · {counts.dropins} avulsos{counts.inactive > 0 ? ` · ${counts.inactive} inativos` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <a className="btn btn-outline btn-sm" href="/admin/jogadores/export" title="Baixa um Excel com todos os jogadores: dados, estrelas, turmas, assinatura e um resumo">
+            📥 Exportar Excel
+          </a>
+          <button className="btn btn-primary btn-sm" onClick={() => { setEditing(null); setShowForm(!showForm); setError(""); }}>
+            + Novo jogador
+          </button>
+        </div>
       </div>
 
       {formVisible && (
@@ -107,6 +123,9 @@ export default function PlayerManager({ players, teams }: { players: PlayerRow[]
         ))}
         {filtered.length === 0 && <p className="p-4 text-sm text-[var(--ink-soft)]">Nenhum jogador encontrado.</p>}
       </div>
+      <p className="text-xs text-[var(--ink-soft)]">
+        {search ? `${filtered.length} de ${players.length} jogadores` : `${players.length} jogadores cadastrados`}
+      </p>
     </div>
   );
 }
