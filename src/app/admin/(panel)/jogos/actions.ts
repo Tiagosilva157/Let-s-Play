@@ -87,7 +87,15 @@ export async function adminAddPlayer(gameId: string, playerId: string) {
 export async function adminDecline(gameId: string, playerId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
-  const { data } = await db.rpc("fn_decline_member", { p_game_id: gameId, p_player_id: playerId, p_source: "admin" });
+  let { data } = await db.rpc("fn_decline_member", { p_game_id: gameId, p_player_id: playerId, p_source: "admin" });
+  if (data?.error === "not_a_member") {
+    // já saiu da turma, mas o convite ficou vivo segurando vaga: limpa direto
+    const { data: rows } = await db.from("game_participants").update({ status: "declined", source: "admin" })
+      .eq("game_id", gameId).eq("player_id", playerId).in("status", ["invited", "confirmed"]).select("id");
+    if (!rows?.length) return { error: "Este jogador não está na lista." };
+    const { data: promo } = await db.rpc("fn_promote_waitlist", { p_game_id: gameId });
+    data = { ok: true, promoted: promo?.promoted ?? [] };
+  }
   if (!data?.ok) return { error: data?.error === "game_canceled" ? "Este jogo está cancelado." : "Não foi possível marcar como \"Não vai\"." };
   await auditAdmin(admin.id, "admin_decline", "game_participants", `${gameId}:${playerId}`);
   const promoted = (data.promoted ?? []) as string[];
