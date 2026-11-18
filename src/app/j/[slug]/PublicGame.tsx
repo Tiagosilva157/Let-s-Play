@@ -617,9 +617,16 @@ export default function PublicGame({ game, participants, player, myStatus, isMem
               )}
 
               {myStatus?.status === "reserved" && (
-                <button className="btn btn-primary" onClick={() => doAction("reserve")} disabled={busy}>
-                  {busy && <Spinner />} Ver Pix pendente
-                </button>
+                <>
+                  <button className="btn btn-primary" onClick={() => doAction("reserve")} disabled={busy}>
+                    {busy && <Spinner />} Ver Pix pendente
+                  </button>
+                  <button className="btn btn-outline" disabled={busy}
+                    onClick={() => { if (confirm("Desistir da vaga? O Pix pendente é cancelado e a vaga vai para o próximo da lista de espera.")) doAction("withdraw"); }}>
+                    {busy && <Spinner />} Desistir da vaga
+                  </button>
+                  <p className="text-xs text-center text-[var(--ink-soft)]">Sua vaga está reservada até o pagamento do Pix. Se não for jogar, desista para liberar a vaga para o próximo.</p>
+                </>
               )}
 
               {(myStatus == null || ["declined", "withdrawn"].includes(myStatus.status)) && (
