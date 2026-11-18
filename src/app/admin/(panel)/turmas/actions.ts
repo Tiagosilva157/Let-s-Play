@@ -5,6 +5,7 @@ import { hoursBeforeGame } from "@/lib/deadline";
 import { z } from "zod";
 import { requireAdmin, auditAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { onMembersAdded, onMembersRemoved } from "@/lib/members-sync";
 
 const TeamSchema = z.object({
   name: z.string().min(2).max(60),
@@ -126,6 +127,7 @@ export async function addMember(teamId: string, formData: FormData) {
   });
   if (error) return { error: error.code === "23505" ? "Esse jogador já é mensalista da turma." : "Erro ao vincular." };
   await auditAdmin(admin.id, "add_member", "team_members", player.id);
+  await onMembersAdded(teamId, [player.id]).catch(() => {});
   revalidatePath(`/admin/turmas`);
   return { ok: true };
 }
@@ -213,6 +215,7 @@ export async function syncTeamMembers(teamId: string, checkedPlayerIds: string[]
     .eq("team_id", teamId);
 
   let added = 0, removed = 0, subsCanceled = 0;
+  const removedIds: string[] = [], addedIds: string[] = [];
 
   // desmarcados que hoje são ativos → saem
   for (const m of current ?? []) {
@@ -227,7 +230,7 @@ export async function syncTeamMembers(teamId: string, checkedPlayerIds: string[]
         subsCanceled++;
       }
       await db.from("team_members").update({ status: "inactive" }).eq("id", m.id);
-      removed++;
+      removed++; removedIds.push(m.player_id);
     }
   }
 
@@ -238,13 +241,17 @@ export async function syncTeamMembers(teamId: string, checkedPlayerIds: string[]
     if (existing) {
       if (existing.status !== "active") {
         await db.from("team_members").update({ status: "active" }).eq("id", existing.id);
-        added++;
+        added++; addedIds.push(playerId);
       }
     } else {
       const { error } = await db.from("team_members").insert({ team_id: teamId, player_id: playerId });
-      if (!error) added++;
+      if (!error) { added++; addedIds.push(playerId); }
     }
   }
+
+  // listas abertas: quem saiu libera o convite; quem entrou recebe o convite
+  await onMembersRemoved(teamId, removedIds).catch(() => {});
+  await onMembersAdded(teamId, addedIds).catch(() => {});
 
   await auditAdmin(admin.id, "sync_members", "team_members", teamId, { added, removed, subsCanceled });
   revalidatePath("/admin/turmas");
@@ -254,8 +261,10 @@ export async function syncTeamMembers(teamId: string, checkedPlayerIds: string[]
 export async function removeMember(memberId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
+  const { data: m } = await db.from("team_members").select("team_id, player_id").eq("id", memberId).maybeSingle();
   await db.from("team_members").update({ status: "inactive" }).eq("id", memberId);
   await auditAdmin(admin.id, "remove_member", "team_members", memberId);
+  if (m) await onMembersRemoved(m.team_id, [m.player_id]).catch(() => {});
   revalidatePath(`/admin/turmas`);
 }
 
