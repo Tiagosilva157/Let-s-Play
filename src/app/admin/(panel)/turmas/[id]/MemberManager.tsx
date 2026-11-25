@@ -74,10 +74,15 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
     });
   }
 
-  function remove(id: string, name: string) {
-    if (!confirm(`Remover ${name} dos mensalistas?`)) return;
+  function remove(id: string, name: string, hasSub: boolean) {
+    const msg = hasSub
+      ? `Remover ${name} dos mensalistas?\n\nA assinatura dele no Asaas será CANCELADA (nenhuma nova mensalidade será gerada). Nos jogos com lista aberta, o convite sem resposta dele é liberado.`
+      : `Remover ${name} dos mensalistas?\n\nNos jogos com lista aberta, o convite sem resposta dele é liberado.`;
+    if (!confirm(msg)) return;
     startTransition(async () => {
-      await removeMember(id);
+      const res = await removeMember(id);
+      if (res?.error) { setError(res.error); return; }
+      setError("");
       router.refresh();
     });
   }
@@ -191,7 +196,7 @@ export default function MemberManager({ teamId, members, availablePlayers }: {
                     });
                   }}>{pending && <Spinner size={14} />} Cancelar assinatura</button>
               )}
-              <button className="btn btn-danger-soft btn-sm" onClick={() => remove(m.id, m.name)} disabled={pending}>{pending && <Spinner size={14} />} Remover</button>
+              <button className="btn btn-danger-soft btn-sm" onClick={() => remove(m.id, m.name, ["active", "overdue"].includes(m.subscription))} disabled={pending}>{pending && <Spinner size={14} />} Remover</button>
             </div>
           </li>
         ))}

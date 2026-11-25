@@ -261,11 +261,25 @@ export async function syncTeamMembers(teamId: string, checkedPlayerIds: string[]
 export async function removeMember(memberId: string) {
   const admin = await requireAdmin();
   const db = supabaseAdmin();
-  const { data: m } = await db.from("team_members").select("team_id, player_id").eq("id", memberId).maybeSingle();
+  const { data: m } = await db.from("team_members")
+    .select("team_id, player_id, asaas_subscription_id, subscription_status").eq("id", memberId).maybeSingle();
+  if (!m) return { error: "Mensalista não encontrado." };
+
+  // assinatura em andamento: cancela no Asaas ANTES de remover; se falhar, nada muda
+  let subCanceled = false;
+  if (m.asaas_subscription_id && ["active", "overdue"].includes(m.subscription_status)) {
+    const { Asaas } = await import("@/lib/asaas");
+    const ok = await Asaas.cancelSubscription(m.asaas_subscription_id).then(() => true).catch(() => false);
+    if (!ok) return { error: "Não foi possível cancelar a assinatura no Asaas. Nada foi alterado — tente novamente." };
+    await db.from("team_members").update({ asaas_subscription_id: null, subscription_status: "canceled" }).eq("id", memberId);
+    subCanceled = true;
+  }
+
   await db.from("team_members").update({ status: "inactive" }).eq("id", memberId);
-  await auditAdmin(admin.id, "remove_member", "team_members", memberId);
-  if (m) await onMembersRemoved(m.team_id, [m.player_id]).catch(() => {});
+  await auditAdmin(admin.id, "remove_member", "team_members", memberId, { subCanceled });
+  await onMembersRemoved(m.team_id, [m.player_id]).catch(() => {});
   revalidatePath(`/admin/turmas`);
+  return { ok: true, subCanceled };
 }
 
 /**
