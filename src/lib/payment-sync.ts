@@ -32,36 +32,54 @@ export async function applyDropinPaid(chargeId: string, gameId: string) {
   return result;
 }
 
-/** Pix de avulso pendente das últimas horas: pergunta ao Asaas se já foi pago. */
-export async function reconcilePendingDropins(limit = 25) {
+/** Status do pagamento no Asaas se estiver pago; null se não (ou se o Asaas não respondeu). */
+export async function isPaidOnAsaas(asaasPaymentId: string): Promise<string | null> {
+  try {
+    const p = await Asaas.getPayment(asaasPaymentId);
+    return PAID.has(p.status) ? p.status : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Marca a cobrança como paga (se ainda pendente/expirada) e confirma a vaga. */
+export async function markPaidAndConfirm(chargeId: string, gameId: string, asaasStatus: string) {
   const db = supabaseAdmin();
-  const since = new Date(Date.now() - 6 * 3600e3).toISOString();
+  const status = asaasStatus === "CONFIRMED" ? "confirmed" : "received";
+  // só avança a partir de pendente/expirada (o webhook pode ter chegado no meio)
+  const { data: upd } = await db.from("charges")
+    .update({ status, paid_at: new Date().toISOString(), ...(asaasStatus === "RECEIVED_IN_CASH" ? {} : { payment_method: "asaas_pix" }) })
+    .eq("id", chargeId).in("status", ["pending", "expired"]).select("id");
+  if (!upd?.length) return null;
+  return applyDropinPaid(chargeId, gameId);
+}
+
+/**
+ * Pix de avulso das últimas horas que o sistema ainda não viu pago — pendentes E
+ * expirados (a reserva pode ter vencido antes do aviso do Asaas chegar). Pergunta
+ * ao Asaas; se foi pago, confirma a vaga (ou manda para "pagou sem vaga" se a lista encheu).
+ */
+export async function reconcilePendingDropins(limit = 30, hours = 6) {
+  const db = supabaseAdmin();
+  const since = new Date(Date.now() - hours * 3600e3).toISOString();
   const notTooNew = new Date(Date.now() - 30e3).toISOString(); // dá 30 s para o webhook chegar primeiro
-  const { data: pending } = await db.from("charges")
-    .select("id, asaas_payment_id, game_id")
-    .eq("type", "dropin").eq("status", "pending")
+  const { data: rows } = await db.from("charges")
+    .select("id, asaas_payment_id, game_id, status")
+    .eq("type", "dropin").in("status", ["pending", "expired"])
     .not("asaas_payment_id", "is", null).not("game_id", "is", null)
     .gte("created_at", since).lte("created_at", notTooNew)
+    .order("status", { ascending: false }) // pendentes primeiro
     .order("created_at", { ascending: true })
     .limit(limit);
 
-  let checked = 0, confirmed = 0;
-  for (const c of pending ?? []) {
+  let checked = 0, confirmed = 0, review = 0;
+  for (const c of rows ?? []) {
     checked++;
-    try {
-      const p = await Asaas.getPayment(c.asaas_payment_id!);
-      if (!PAID.has(p.status)) continue;
-      const status = p.status === "CONFIRMED" ? "confirmed" : "received";
-      // só avança se ainda estiver pendente (o webhook pode ter chegado no meio)
-      const { data: upd } = await db.from("charges")
-        .update({ status, paid_at: new Date().toISOString(), ...(p.status === "RECEIVED_IN_CASH" ? {} : { payment_method: "asaas_pix" }) })
-        .eq("id", c.id).eq("status", "pending").select("id");
-      if (!upd?.length) continue;
-      const r = await applyDropinPaid(c.id, c.game_id!);
-      if (r?.confirmed) confirmed++;
-    } catch {
-      // Asaas indisponível: tenta no próximo minuto
-    }
+    const paid = await isPaidOnAsaas(c.asaas_payment_id!);
+    if (!paid) continue;
+    const r = await markPaidAndConfirm(c.id, c.game_id!, paid);
+    if (r?.confirmed) confirmed++;
+    if (r?.pending_review) review++;
   }
-  return { checked, confirmed };
+  return { checked, confirmed, review };
 }

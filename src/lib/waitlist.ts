@@ -181,12 +181,19 @@ export async function processExpirations(expired: ExpiredRow[] | null | undefine
   if (!rows.length) return;
   const db = supabaseAdmin();
 
+  const { markPaidAndConfirm, isPaidOnAsaas } = await import("@/lib/payment-sync");
   for (const row of rows) {
-    // cancela a cobrança órfã
+    // cancela a cobrança órfã — MAS antes confere no Asaas: se o Pix já foi pago
+    // (webhook atrasado/perdido), a vaga é confirmada em vez de expirar
     if (row.charge_id) {
       const { data: c } = await db.from("charges")
-        .select("id, asaas_payment_id, status").eq("id", row.charge_id).maybeSingle();
+        .select("id, asaas_payment_id, status, game_id").eq("id", row.charge_id).maybeSingle();
       if (c && c.status === "pending") {
+        const paid = c.asaas_payment_id ? await isPaidOnAsaas(c.asaas_payment_id) : null;
+        if (paid) {
+          await markPaidAndConfirm(c.id, c.game_id!, paid);
+          continue; // sem aviso de "prazo terminou": ele pagou
+        }
         if (c.asaas_payment_id) await Asaas.cancelPayment(c.asaas_payment_id).catch(() => {});
         await db.from("charges").update({ status: "expired" }).eq("id", c.id);
       }
