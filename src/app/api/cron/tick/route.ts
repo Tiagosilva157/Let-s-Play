@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { dispatchPending, enqueueListOpened, enqueueListUpdate } from "@/lib/messaging";
 import { processExpirations, processPromotions, type ExpiredRow } from "@/lib/waitlist";
+import { reconcilePendingDropins } from "@/lib/payment-sync";
 
 export const maxDuration = 60;
 
@@ -12,6 +13,9 @@ export async function GET(req: NextRequest) {
   }
   const db = supabaseAdmin();
   const report: Record<string, unknown> = {};
+
+  // 0. Pix pago sem webhook: confirma a vaga ANTES de expirar a reserva
+  report.payments = await reconcilePendingDropins().catch((e) => { console.error("[pagamento] conciliação:", e); return null; });
 
   // 1. expirar reservas: cancela cobranças, avisa quem perdeu a vez
   //    e dispara a cascata (Pix + avisos) para quem subiu da fila
