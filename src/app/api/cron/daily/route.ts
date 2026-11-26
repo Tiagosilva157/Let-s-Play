@@ -23,6 +23,10 @@ export async function GET(req: NextRequest) {
     .not("asaas_payment_id", "is", null)
     .limit(100);
 
+  // Pix de avulso que expirou mas foi pago (webhook perdido): últimos 3 dias
+  const { reconcilePendingDropins } = await import("@/lib/payment-sync");
+  const recovered = await reconcilePendingDropins(200, 72).catch(() => null);
+
   let reconciled = 0;
   for (const c of stale ?? []) {
     try {
@@ -141,5 +145,5 @@ export async function GET(req: NextRequest) {
     if (!error) reminders++;
   }
 
-  return NextResponse.json({ ok: true, generated, reconciled, reminders, dueReminders });
+  return NextResponse.json({ ok: true, generated, reconciled, recovered, reminders, dueReminders });
 }
